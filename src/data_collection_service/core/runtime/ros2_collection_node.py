@@ -178,7 +178,10 @@ class PlatformCollectionNode(Node):
             if not self._state_machine.is_recording:
                 return
             if sample.image_data is not None:
-                self._writer.append_image(stream_name, sample.image_data, sample.timestamp_ns)
+                self._writer.append_image(
+                    stream_name, sample.image_data, sample.timestamp_ns,
+                    width=sample.width, height=sample.height,
+                )
             elif sample.values is not None:
                 self._writer.append_vector(stream_name, sample.values, sample.timestamp_ns)
         except Exception as exc:

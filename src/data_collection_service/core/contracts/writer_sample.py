@@ -21,6 +21,8 @@ class WriterSample:
     timestamp_ns: int
     values: tuple[float, ...] | None = None   # for vector streams
     image_data: bytes | None = None            # for image streams
+    width: int | None = None                   # image width from message metadata
+    height: int | None = None                  # image height from message metadata
 
 
 __all__ = ["WriterSample"]

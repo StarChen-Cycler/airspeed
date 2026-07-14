@@ -76,7 +76,7 @@ class ConfiguredStreamAdapter:
             reencode = (self.stream.image_encoding is not None
                         and self.stream.image_encoding.value == "jpeg")
             writer.register_image_stream(
-                self.stream.name, width=640, height=480, channels=3,
+                self.stream.name, width=0, height=0, channels=3,
                 reencode_to_jpeg=reencode,
             )
         else:
@@ -212,6 +212,8 @@ def _writer_sample_from_payload(
         return WriterSample(
             stream_name=stream_name, timestamp_ns=ts_ns,
             image_data=bytes(data_bytes),
+            width=_int_or_none(payload.get("width")),
+            height=_int_or_none(payload.get("height")),
         )
 
     # Vector: flatten all leaf scalar values depth-first
@@ -220,6 +222,13 @@ def _writer_sample_from_payload(
         stream_name=stream_name, timestamp_ns=ts_ns,
         values=tuple(values),
     )
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _collect_scalars(obj: Any) -> list[float]:

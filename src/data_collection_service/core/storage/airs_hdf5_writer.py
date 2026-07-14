@@ -193,11 +193,14 @@ class AirsHdf5Writer:
             raise AirsHdf5WriterError(f"{name!r} is not a registered vector stream")
         buf.append(values, timestamp_ns)
 
-    def append_image(self, name: str, raw_data: bytes, timestamp_ns: int) -> None:
+    def append_image(
+        self, name: str, raw_data: bytes, timestamp_ns: int, *,
+        width: int | None = None, height: int | None = None,
+    ) -> None:
         buf = self._streams.get(name)
         if not isinstance(buf, _ImageBuffer):
             raise AirsHdf5WriterError(f"{name!r} is not a registered image stream")
-        buf.append(raw_data, timestamp_ns)
+        buf.append(raw_data, timestamp_ns, width=width, height=height)
 
     # -- helpers --
 
@@ -304,21 +307,41 @@ class _ImageBuffer:
         self._total = 0
         self._first_ts_ns: int | None = None
         self._last_ts_ns: int | None = None
+        self._dims_finalized = False  # width/height attrs set from first frame
 
     @property
     def frame_count(self) -> int:
         return self._total + len(self._frame_buf)
 
-    def append(self, raw_data: bytes, timestamp_ns: int) -> None:
+    def append(
+        self, raw_data: bytes, timestamp_ns: int,
+        *, width: int | None = None, height: int | None = None,
+    ) -> None:
         if self._reencode:
             raw_data = _reencode_jpeg(raw_data)
         if self._first_ts_ns is None:
             self._first_ts_ns = int(timestamp_ns)
+            self._set_dimensions(raw_data, width, height)
         self._last_ts_ns = int(timestamp_ns)
         self._frame_buf.append(raw_data)
         self._ts_buf.append(np.uint64(timestamp_ns))
         if len(self._frame_buf) >= _IMAGE_BATCH:
             self._flush_batch()
+
+    def _set_dimensions(
+        self, raw_data: bytes, width: int | None, height: int | None,
+    ) -> None:
+        if not self._dims_finalized:
+            w = int(width) if width else 0
+            h = int(height) if height else 0
+            if w <= 0 or h <= 0:
+                decoded = _jpeg_dimensions(raw_data)
+                if decoded is not None:
+                    w, h = decoded
+            if w > 0 and h > 0:
+                self._grp.attrs["width"] = w
+                self._grp.attrs["height"] = h
+                self._dims_finalized = True
 
     def _flush_batch(self) -> None:
         if not self._frame_buf:
@@ -372,6 +395,42 @@ def _reencode_jpeg(raw: bytes) -> bytes:
         return raw
     _, enc = cv2.imencode(".jpg", img)
     return enc.tobytes()
+
+
+def _jpeg_dimensions(raw: bytes) -> tuple[int, int] | None:
+    """Return (width, height) from the first SOF0/SOF2 marker in a JPEG.
+
+    Runs without external dependencies. Returns None if no SOF marker is found.
+    """
+    i = 0
+    n = len(raw)
+    while i < n:
+        # Find next marker
+        if raw[i] != 0xFF:
+            i += 1
+            continue
+        # Skip padding 0xFF bytes
+        while i + 1 < n and raw[i + 1] == 0xFF:
+            i += 1
+        if i + 1 >= n:
+            return None
+        marker = raw[i + 1]
+        i += 2
+        # SOF0 (baseline) or SOF2 (progressive)
+        if marker in (0xC0, 0xC2):
+            if i + 7 >= n:
+                return None
+            # length (2 bytes), precision (1), height (2), width (2)
+            height = int.from_bytes(raw[i + 3:i + 5], "big")
+            width = int.from_bytes(raw[i + 5:i + 7], "big")
+            return width, height
+        # Skip marker segment if it has a length field
+        if marker not in (0x00, 0x01, 0xD0, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9):
+            if i + 2 > n:
+                return None
+            length = int.from_bytes(raw[i:i + 2], "big")
+            i += length
+    return None
 
 
 __all__ = ["AirsHdf5Writer", "AirsHdf5WriterError"]

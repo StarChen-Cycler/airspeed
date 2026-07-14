@@ -140,7 +140,10 @@ def _run_record(config, adapters, rate_hz, interval_s, args):
             try:
                 result = adapter.adapt(msg, received_at=step_ts)
                 if result.image_data is not None:
-                    writer.append_image(name, result.image_data, result.timestamp_ns)
+                    writer.append_image(
+                        name, result.image_data, result.timestamp_ns,
+                        width=result.width, height=result.height,
+                    )
                 elif result.values is not None:
                     writer.append_vector(name, result.values, result.timestamp_ns)
             except Exception as exc:
