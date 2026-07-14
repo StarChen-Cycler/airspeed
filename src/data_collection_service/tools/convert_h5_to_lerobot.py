@@ -18,11 +18,6 @@ from pathlib import Path
 import h5py, numpy as np
 
 
-def load_schema(schema_path: Path) -> dict:
-    with open(schema_path) as f:
-        return json.load(f)
-
-
 def _nearest_idx(timestamps: np.ndarray, query_ts: int) -> int:
     """Find index of nearest timestamp to query_ts."""
     idx = np.searchsorted(timestamps, query_ts, side="left")
@@ -35,32 +30,55 @@ def _nearest_idx(timestamps: np.ndarray, query_ts: int) -> int:
     return idx
 
 
-def convert_to_lerobot(h5_path: Path, schema: dict, output_path: Path,
+def convert_to_lerobot(h5_path: Path, output_path: Path,
                        fps: int = 60, robot_type: str = "openarm",
                        repo_id: str = "airspeed_episode",
-                       vcodec: str = "h264") -> str:
+                       vcodec: str = "h264",
+                       *, exclude_failure_demos: bool = False) -> str:
     """Convert AIRS HDF5 to LeRobot v3 dataset. Returns dataset path."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     with h5py.File(h5_path, "r") as f:
-        # Classify streams
+        # Fail-fast: new-vintage required attrs
+        if "task_prompt" not in f.attrs:
+            raise ValueError(
+                f"{h5_path}: missing root attr 'task_prompt'; "
+                "old episodes are retired and must not be converted"
+            )
+        if "recording_valid" in f.attrs and not bool(f.attrs["recording_valid"]):
+            raise ValueError(
+                f"{h5_path}: recording_valid=False; episode was deleted/invalidated"
+            )
+        if exclude_failure_demos and "task_completed" in f.attrs and not bool(f.attrs["task_completed"]):
+            raise ValueError(
+                f"{h5_path}: task_completed=False and --exclude-failure-demos is set"
+            )
+
+        # Classify streams from HDF5 attrs only.
         vr_vectors = []    # 60Hz teleop streams
         ik_vectors = []    # 50Hz IK command streams
         arm_vectors = []   # 20Hz arm state streams
         image_streams = [] # camera streams
-        for s in schema["streams"]:
-            name = s["name"]
-            if s["type"] == "image":
+        for name in f.keys():
+            grp = f[name]
+            gtype = str(grp.attrs.get("type", ""))
+            if gtype == "image":
                 image_streams.append(name)
-            elif name.startswith("vr_"):
-                vr_vectors.append(name)
-            elif name.startswith("ik_"):
-                ik_vectors.append(name)
-            elif name.startswith("arm_"):
-                arm_vectors.append(name)
+            elif gtype == "vector":
+                if name.startswith("vr_"):
+                    vr_vectors.append(name)
+                elif name.startswith("ik_"):
+                    ik_vectors.append(name)
+                elif name.startswith("arm_"):
+                    arm_vectors.append(name)
+
+        if not vr_vectors:
+            raise ValueError(f"{h5_path}: no vr_* vector streams found")
 
         # Use VR head pose as canonical timeline
         canonical = "vr_head_pose"
+        if canonical not in f:
+            canonical = vr_vectors[0]
         canon_ts = f[canonical]["timestamps"][:]
         n_frames = len(canon_ts)
         print(f"  Canonical timeline: {canonical} ({n_frames} frames @ ~{fps}Hz)")
@@ -73,37 +91,74 @@ def convert_to_lerobot(h5_path: Path, schema: dict, output_path: Path,
                 "type": str(grp.attrs["type"]),
                 "data": grp["data"][:],
                 "ts": grp["timestamps"][:],
+                "sample_rate": float(grp.attrs.get("sample_rate", 0.0)),
+                "columns": json.loads(grp.attrs.get("columns", "[]")),
             }
 
-        # Build total state dimension from all vector streams
+        # Validate and collect semantic column names
         all_vectors = vr_vectors + ik_vectors + arm_vectors
-        total_state_dim = sum(
-            stream_cache[n]["data"].shape[1] for n in all_vectors
-            if stream_cache[n]["data"].ndim > 1
-        ) + sum(1 for n in all_vectors if stream_cache[n]["data"].ndim == 1)
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        state_names: list[str] = []
+        for name in all_vectors:
+            cols = stream_cache[name]["columns"]
+            if not cols:
+                raise ValueError(
+                    f"{h5_path}: stream {name!r} missing 'columns' attr; "
+                    "old episodes are retired"
+                )
+            for c in cols:
+                if c.startswith("dim_"):
+                    raise ValueError(
+                        f"{h5_path}: stream {name!r} uses legacy dim_N naming ({c}); "
+                        "old episodes are retired"
+                    )
+                if c in seen:
+                    duplicates.add(c)
+                seen.add(c)
+                state_names.append(c)
+        if duplicates:
+            raise ValueError(
+                f"{h5_path}: duplicate feature names across streams: {sorted(duplicates)}"
+            )
 
-        # Detect actual image dimensions from first JPEG frame
-        import cv2
+        total_state_dim = len(state_names)
+
+        # Warn on per-stream rate deviations from target fps
+        for name in all_vectors + image_streams:
+            rate = stream_cache[name]["sample_rate"]
+            if rate <= 0.0:
+                continue
+            deviation = abs(rate - fps) / fps
+            if deviation > 0.20:
+                print(
+                    f"WARNING: {h5_path}: stream {name!r} sample_rate={rate:.2f}Hz "
+                    f"deviates {deviation*100:.0f}% from target {fps}Hz",
+                    file=sys.stderr,
+                )
+
+        # Detect actual image dimensions
         image_dims = {}
         for cam in image_streams:
-            jpeg = bytes(stream_cache[cam]["data"][0])
-            img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
-            h, w = img.shape[:2]
+            grp = f[cam]
+            w = int(grp.attrs.get("width", 0))
+            h = int(grp.attrs.get("height", 0))
+            if w <= 0 or h <= 0:
+                import cv2
+                jpeg = bytes(stream_cache[cam]["data"][0])
+                img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+                h, w = img.shape[:2]
             image_dims[cam] = (h, w)
 
         # Build feature schema
         features = {
             "observation.state": {
                 "dtype": "float32", "shape": (total_state_dim,),
-                "names": [f"{n}_{i}" for n in all_vectors for i in range(
-                    stream_cache[n]["data"].shape[1] if stream_cache[n]["data"].ndim > 1 else 1
-                )],
+                "names": state_names,
             },
             "action": {
                 "dtype": "float32", "shape": (total_state_dim,),
-                "names": [f"{n}_{i}" for n in all_vectors for i in range(
-                    stream_cache[n]["data"].shape[1] if stream_cache[n]["data"].ndim > 1 else 1
-                )],
+                "names": state_names,
             },
         }
         for cam in image_streams:
@@ -123,6 +178,8 @@ def convert_to_lerobot(h5_path: Path, schema: dict, output_path: Path,
             vcodec=vcodec,
         )
 
+        task_prompt = str(f.attrs.get("task_prompt", ""))
+
         # Convert frames
         for i in range(n_frames):
             query_ts = int(canon_ts[i])
@@ -141,13 +198,14 @@ def convert_to_lerobot(h5_path: Path, schema: dict, output_path: Path,
             state = np.concatenate(state_parts).astype(np.float32)
             frame["observation.state"] = state
             frame["action"] = state  # teleop: action = observed state
-            frame["task"] = "airspeed_teleop"
+            frame["task"] = task_prompt
 
             # Decode images
             for cam in image_streams:
                 sc = stream_cache[cam]
                 idx = _nearest_idx(sc["ts"], query_ts)
                 jpeg_bytes = bytes(sc["data"][idx])
+                import cv2
                 img = cv2.imdecode(np.frombuffer(jpeg_bytes, np.uint8), cv2.IMREAD_COLOR)
                 frame[f"observation.images.{cam}"] = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
@@ -163,7 +221,7 @@ def convert_to_lerobot(h5_path: Path, schema: dict, output_path: Path,
     return str(output_path)
 
 
-def validate_lerobot(dataset_path: Path, schema: dict) -> dict:
+def validate_lerobot(dataset_path: Path) -> dict:
     """Basic validation of LeRobot dataset output."""
     report = {"errors": [], "warnings": []}
 
@@ -209,32 +267,37 @@ def validate_lerobot(dataset_path: Path, schema: dict) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert AIRS HDF5 to LeRobot v3")
-    parser.add_argument("--hdf5", help="Path to AIRS .h5 (default: from schema.json)")
-    parser.add_argument("--schema", default="convert/test_artifacts/schema.json")
+    parser.add_argument("--hdf5", required=True, help="Path to AIRS .h5 file")
     parser.add_argument("--output", default="convert/test_artifacts/lerobot_dataset")
     parser.add_argument("--fps", type=int, default=60, help="Canonical frame rate")
     parser.add_argument("--robot-type", default="openarm")
     parser.add_argument("--vcodec", default="h264",
                         help="Video codec: h264, libsvtav1, hevc")
+    parser.add_argument("--exclude-failure-demos", action="store_true",
+                        help="Skip episodes where task_completed=False")
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parent.parent.parent.parent
-    schema = load_schema(project_root / args.schema)
-    h5 = project_root / (args.hdf5 or schema["source"])
+    h5 = project_root / args.hdf5
     out = project_root / args.output
 
+    if ".trash" in h5.parts:
+        print(f"Skipping .trash episode: {h5}")
+        sys.exit(0)
+
     if args.validate_only:
-        report = validate_lerobot(out, schema)
+        report = validate_lerobot(out)
         print(json.dumps(report, indent=2))
         sys.exit(0 if report["valid"] else 1)
 
-    path = convert_to_lerobot(h5, schema, out, fps=args.fps,
-                              robot_type=args.robot_type, vcodec=args.vcodec)
+    path = convert_to_lerobot(h5, out, fps=args.fps,
+                              robot_type=args.robot_type, vcodec=args.vcodec,
+                              exclude_failure_demos=args.exclude_failure_demos)
     print(f"\n  Dataset: {path}")
 
     # Validate
-    report = validate_lerobot(Path(path), schema)
+    report = validate_lerobot(Path(path))
     status = "PASS" if report["valid"] else "FAIL"
     print(f"  Validation: {status}")
     print(f"  Info: {report.get('info', {})}")
