@@ -32,7 +32,7 @@ class ValidationReport:
         }
 
 
-_ROOT_ATTRS = frozenset({"description", "robot_type", "series_number", "sample_rate", "frames"})
+_ROOT_ATTRS = frozenset({"description", "robot_type", "series_number", "frames"})
 
 
 def validate_dataset(dataset_path: str | Path) -> ValidationReport:
@@ -100,8 +100,12 @@ def _validate_vector_group(f: h5py.File, name: str, report: ValidationReport) ->
             f"/{name}", f"data[0]={data.shape[0]} != timestamps[0]={ts.shape[0]}",
         ))
         report.is_valid = False
+    if "sample_rate" not in grp.attrs:
+        report.errors.append(ValidationIssue(f"/{name}", "missing attr: sample_rate"))
+        report.is_valid = False
     if "columns" not in grp.attrs:
-        report.warnings.append(ValidationIssue(f"/{name}", "missing columns attr"))
+        report.errors.append(ValidationIssue(f"/{name}", "missing columns attr"))
+        report.is_valid = False
 
 
 def _validate_image_group(f: h5py.File, name: str, report: ValidationReport) -> None:
@@ -122,6 +126,9 @@ def _validate_image_group(f: h5py.File, name: str, report: ValidationReport) -> 
         report.errors.append(ValidationIssue(
             f"/{name}", f"data[0]={data.shape[0]} != timestamps[0]={ts.shape[0]}",
         ))
+        report.is_valid = False
+    if "sample_rate" not in grp.attrs:
+        report.errors.append(ValidationIssue(f"/{name}", "missing attr: sample_rate"))
         report.is_valid = False
     encoding = str(grp.attrs.get("encoding", ""))
     if encoding == "jpeg" and data.shape[0] > 0:

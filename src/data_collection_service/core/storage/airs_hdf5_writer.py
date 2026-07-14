@@ -81,19 +81,18 @@ class AirsHdf5Writer:
         self._file = h5py.File(path, "w")
         self._streams = {}
 
-    def close_episode(self, *, sample_rate: float = 0.0,
+    def close_episode(self, *,
                       success: bool | None = None,
                       termination_reason: str = "") -> str:
         if self._file is None:
             raise AirsHdf5WriterError("no episode is open")
         total_frames = 0
         for buf in self._streams.values():
-            buf.flush_remaining(self._file)
+            buf.flush_remaining()
             total_frames = max(total_frames, buf.frame_count)
         self._file.attrs["description"] = self._description
         self._file.attrs["robot_type"] = self._robot_type
         self._file.attrs["series_number"] = self._series_number
-        self._file.attrs["sample_rate"] = float(sample_rate)
         self._file.attrs["frames"] = total_frames
         if self._task_meta:
             self._file.attrs["task_name"] = str(self._task_meta.get("task_name", ""))
@@ -216,6 +215,8 @@ class _VectorBuffer:
         self._data_buf: list[np.ndarray] = []
         self._ts_buf: list[np.uint64] = []
         self._total = 0
+        self._first_ts_ns: int | None = None
+        self._last_ts_ns: int | None = None
 
     @property
     def frame_count(self) -> int:
@@ -234,6 +235,9 @@ class _VectorBuffer:
                 f"{self.name}: sample has {arr.size} values but "
                 f"{self._n_columns} columns are declared"
             )
+        if self._first_ts_ns is None:
+            self._first_ts_ns = int(timestamp_ns)
+        self._last_ts_ns = int(timestamp_ns)
         self._data_buf.append(arr.astype(np.float32))
         self._ts_buf.append(np.uint64(timestamp_ns))
         if len(self._data_buf) >= _VECTOR_BATCH:
@@ -265,10 +269,12 @@ class _VectorBuffer:
         self._data_buf.clear()
         self._ts_buf.clear()
 
-    def flush_remaining(self, file: h5py.File) -> None:
+    def flush_remaining(self) -> None:
         self._flush_batch()
         self._grp.attrs["frames"] = self._total
-        self._grp.attrs["sample_rate"] = float(file.attrs.get("sample_rate", 0.0))
+        self._grp.attrs["sample_rate"] = _measured_rate(
+            self._total, self._first_ts_ns, self._last_ts_ns
+        )
         if "columns" not in self._grp.attrs:
             raise AirsHdf5WriterError(
                 f"{self.name}: no column names registered; vector streams "
@@ -284,6 +290,8 @@ class _ImageBuffer:
         self._frame_buf: list[bytes] = []
         self._ts_buf: list[np.uint64] = []
         self._total = 0
+        self._first_ts_ns: int | None = None
+        self._last_ts_ns: int | None = None
 
     @property
     def frame_count(self) -> int:
@@ -292,6 +300,9 @@ class _ImageBuffer:
     def append(self, raw_data: bytes, timestamp_ns: int) -> None:
         if self._reencode:
             raw_data = _reencode_jpeg(raw_data)
+        if self._first_ts_ns is None:
+            self._first_ts_ns = int(timestamp_ns)
+        self._last_ts_ns = int(timestamp_ns)
         self._frame_buf.append(raw_data)
         self._ts_buf.append(np.uint64(timestamp_ns))
         if len(self._frame_buf) >= _IMAGE_BATCH:
@@ -314,11 +325,28 @@ class _ImageBuffer:
         self._frame_buf.clear()
         self._ts_buf.clear()
 
-    def flush_remaining(self, file: h5py.File) -> None:
+    def flush_remaining(self) -> None:
         self._flush_batch()
         self._grp.attrs["frames"] = self._total
-        self._grp.attrs["sample_rate"] = float(file.attrs.get("sample_rate", 0.0))
+        self._grp.attrs["sample_rate"] = _measured_rate(
+            self._total, self._first_ts_ns, self._last_ts_ns
+        )
         self._grp.attrs["camera_name"] = self.name
+
+
+def _measured_rate(n_frames: int, first_ts_ns: int | None,
+                   last_ts_ns: int | None) -> float:
+    """Mean sample rate in Hz from a stream's own timestamps.
+
+    0.0 when uncomputable (fewer than 2 frames or zero duration). The writer
+    records facts; regularity interpretation belongs to downstream stages.
+    """
+    if n_frames < 2 or first_ts_ns is None or last_ts_ns is None:
+        return 0.0
+    duration_s = (last_ts_ns - first_ts_ns) / 1e9
+    if duration_s <= 0.0:
+        return 0.0
+    return (n_frames - 1) / duration_s
 
 
 def _reencode_jpeg(raw: bytes) -> bytes:

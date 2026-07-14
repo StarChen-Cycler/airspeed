@@ -112,7 +112,6 @@ class PlatformCollectionNode(Node):
 
         def _end(success: bool, reason: str) -> None:
             path = self._writer.close_episode(
-                sample_rate=self._compute_sample_rate(),
                 success=success,
                 termination_reason=reason,
             )
@@ -222,9 +221,6 @@ class PlatformCollectionNode(Node):
             self.get_logger().info(f"manual UI at http://{host}:{port}")
         except Exception as exc:
             self.get_logger().warn(f"manual UI failed to start: {exc}")
-
-    def _compute_sample_rate(self) -> float:
-        return 0.0
 
     def shutdown(self) -> None:
         if self._state_machine.is_recording:
