@@ -110,12 +110,14 @@ class PlatformCollectionNode(Node):
                 adapter.register_with(self._writer)
             self._stream_tracker.reset()
 
-        def _end(success: bool, reason: str) -> None:
+        def _end(task_completed: bool, reason: str) -> None:
             path = self._writer.close_episode(
-                success=success,
+                task_completed=task_completed,
                 termination_reason=reason,
             )
-            self.get_logger().info(f"episode closed: {path} success={success} reason={reason}")
+            self.get_logger().info(
+                f"episode closed: {path} task_completed={task_completed} reason={reason}"
+            )
 
         self._state_machine = RecordingStateMachine(start_handler=_start, end_handler=_end)
         self._stream_tracker = StreamTracker(

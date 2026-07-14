@@ -250,7 +250,7 @@ class RecordingControlConfig:
     toggle_debounce_s: float = 0.5
     bindings: tuple[tuple[str, RecordingControlBinding], ...] = ()
 
-    _ALLOWED_BINDING_ACTIONS = frozenset({"toggle", "delete"})
+    _ALLOWED_BINDING_ACTIONS = frozenset({"toggle", "delete", "abort"})
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, RecordingControlMode):

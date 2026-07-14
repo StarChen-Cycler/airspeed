@@ -127,10 +127,19 @@ class RecordingControlRouter:
                 continue  # still held — debounce
             self._binding_states[action] = True
 
+            # Bindings may share one physical button (context-sensitive):
+            # state gating decides which one actually fires. An accepted
+            # result is never masked by a sibling binding's rejection.
             if action == "toggle":
-                result = self._handle_toggle()
+                r = self._handle_toggle()
             elif action == "delete":
-                result = self._handle_delete()
+                r = self._handle_delete() if self._pending_episode else RecordingControlResult(accepted=False)
+            elif action == "abort":
+                r = self._invoke("abort") if self._state.is_recording else RecordingControlResult(accepted=False)
+            else:
+                continue
+            if r.accepted or not result.accepted:
+                result = r
 
         return result
 
@@ -193,12 +202,13 @@ class RecordingControlRouter:
             return RecordingControlResult(accepted=False, message="not recording")
 
         if normalized == "stop":
-            self._state.end_episode(success=True, reason="operator_stop")
+            self._state.end_episode(task_completed=True, reason="goal_reached")
             return RecordingControlResult(accepted=True, action="stop", message="stopped")
         if normalized == "save":
-            self._state.end_episode(success=True, reason="completed")
+            self._state.end_episode(task_completed=True, reason="goal_reached")
             return RecordingControlResult(accepted=True, action="save", message="saved")
         if normalized == "abort":
+            # Episode is KEPT as a failure demo (task not completed, data valid).
             self._state.abort_episode()
             self._pending_episode = False
             return RecordingControlResult(accepted=True, action="abort", message="aborted")

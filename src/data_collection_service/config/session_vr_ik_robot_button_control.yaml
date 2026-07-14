@@ -34,11 +34,17 @@ session:
         stream_name: vr_left_buttons
         button_index: 5
         threshold: 0.5
+      # Context-sensitive B button: during recording it aborts (episode kept
+      # as failure demo); in pending mode it deletes the last episode.
+      abort:
+        stream_name: vr_left_buttons
+        button_index: 4
+        threshold: 0.5
       delete:
         stream_name: vr_left_buttons
         button_index: 4
         threshold: 0.5
-  notes: "VR left controller: menu btn(idx 5) toggles start/stop, thumbstick(idx 4) deletes last episode if pressed after stopping."
+  notes: "VR left controller: menu btn(idx 5) toggles start/stop. Thumbstick btn(idx 4) is context-sensitive: aborts during recording (kept as failure demo), deletes last episode in pending mode."
 
 storage:
   root: data/episodes

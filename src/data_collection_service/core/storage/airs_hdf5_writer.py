@@ -81,9 +81,10 @@ class AirsHdf5Writer:
         self._file = h5py.File(path, "w")
         self._streams = {}
 
-    def close_episode(self, *,
-                      success: bool | None = None,
-                      termination_reason: str = "") -> str:
+    def close_episode(self, *, task_completed: bool,
+                      termination_reason: str) -> str:
+        """Close the open episode. Freshly closed episodes are valid;
+        recording_valid is stamped False only by stamp_recording_invalid."""
         if self._file is None:
             raise AirsHdf5WriterError("no episode is open")
         total_frames = 0
@@ -94,6 +95,9 @@ class AirsHdf5Writer:
         self._file.attrs["robot_type"] = self._robot_type
         self._file.attrs["series_number"] = self._series_number
         self._file.attrs["frames"] = total_frames
+        self._file.attrs["task_completed"] = bool(task_completed)
+        self._file.attrs["recording_valid"] = True
+        self._file.attrs["termination_reason"] = termination_reason
         if self._task_meta:
             self._file.attrs["task_name"] = str(self._task_meta.get("task_name", ""))
             self._file.attrs["task_prompt"] = str(self._task_meta.get("task_prompt", ""))
@@ -102,14 +106,22 @@ class AirsHdf5Writer:
             self._file.attrs["deformable_objects"] = bool(
                 self._task_meta.get("deformable_objects", False)
             )
-        if success is not None:
-            self._file.attrs["success"] = bool(success)
-        if termination_reason:
-            self._file.attrs["termination_reason"] = termination_reason
         path = self._file.filename
         self._file.close()
         self._file = None
         return path
+
+    @staticmethod
+    def stamp_recording_invalid(episode_path: str | Path) -> None:
+        """Mark a closed episode as invalid data (operator deleted it).
+
+        Stamps recording_valid=False and termination_reason=recording_invalid.
+        task_completed is left untouched — it records what the robot did,
+        not whether the data is usable.
+        """
+        with h5py.File(episode_path, "r+") as f:
+            f.attrs["recording_valid"] = False
+            f.attrs["termination_reason"] = "recording_invalid"
 
     @staticmethod
     def move_to_trash(episode_path: str | Path) -> str:

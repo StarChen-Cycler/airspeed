@@ -77,15 +77,15 @@ class RecordingStateMachine:
         self._lifecycle = RecordingLifecycle.RECORDING
         self._active_episode_id = episode_id
 
-    def end_episode(self, success: bool, reason: str) -> None:
+    def end_episode(self, task_completed: bool, reason: str) -> None:
         if self._lifecycle != RecordingLifecycle.RECORDING:
             raise RecordingStateError("cannot end: not recording")
         self._lifecycle = RecordingLifecycle.IDLE
         self._active_episode_id = None
-        self._end_handler(success, reason)
+        self._end_handler(task_completed, reason)
 
     def abort_episode(self) -> None:
-        self.end_episode(success=False, reason="operator_abort")
+        self.end_episode(task_completed=False, reason="operator_abort")
 
     def fail(self) -> None:
         self._lifecycle = RecordingLifecycle.FAILED

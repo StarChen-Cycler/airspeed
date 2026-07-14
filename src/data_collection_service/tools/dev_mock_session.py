@@ -149,7 +149,7 @@ def _run_record(config, adapters, rate_hz, interval_s, args):
         if not args.quiet and (step_idx + 1) % max(1, num_steps // 10) == 0:
             print(f"  step {step_idx + 1}/{num_steps}")
 
-    writer.close_episode(success=True, termination_reason="completed")
+    writer.close_episode(task_completed=True, termination_reason="goal_reached")
     if not args.quiet:
         print(f"output: {output_dir / episode_id}.h5")
         print(f"steps: {num_steps}")

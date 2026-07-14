@@ -103,18 +103,21 @@ class PlatformCollectionNode(Node):
 
         self._last_episode_path: str | None = None
 
-        def _end(success: bool, reason: str) -> None:
+        def _end(task_completed: bool, reason: str) -> None:
             path = self._writer.close_episode(
-                success=success,
+                task_completed=task_completed,
                 termination_reason=reason,
             )
             self._last_episode_path = path
-            self.get_logger().info(f"episode closed: {path} success={success} reason={reason}")
+            self.get_logger().info(
+                f"episode closed: {path} task_completed={task_completed} reason={reason}"
+            )
 
         def _delete_requested() -> bool:
             if self._last_episode_path is None:
                 return False
             try:
+                AirsHdf5Writer.stamp_recording_invalid(self._last_episode_path)
                 trash_path = AirsHdf5Writer.move_to_trash(self._last_episode_path)
                 self.get_logger().info(f"episode moved to trash: {trash_path}")
                 self._last_episode_path = None

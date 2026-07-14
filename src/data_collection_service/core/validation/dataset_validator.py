@@ -32,7 +32,10 @@ class ValidationReport:
         }
 
 
-_ROOT_ATTRS = frozenset({"description", "robot_type", "series_number", "frames"})
+_ROOT_ATTRS = frozenset({
+    "description", "robot_type", "series_number", "frames",
+    "task_completed", "recording_valid", "termination_reason",
+})
 
 
 def validate_dataset(dataset_path: str | Path) -> ValidationReport:
