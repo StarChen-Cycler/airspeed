@@ -11,8 +11,11 @@ session:
     ik_solver:
       device_id: ik-solver-main
       role: teleop
-    openarm_follower:
-      device_id: openarm-follower
+    arm_left:
+      device_id: openarm-left
+      role: robot
+    arm_right:
+      device_id: openarm-right
       role: robot
     camera_left_wrist:
       device_id: camera-left-wrist
@@ -52,6 +55,8 @@ streams:
     source: teleop
     topic: /vr/head_pose
     message_type: geometry_msgs/PoseStamped
+    # Recorded layout is sorted-key flattening: quaternion w-first, then position.
+    columns: [head_qw, head_qx, head_qy, head_qz, head_px, head_py, head_pz]
     qos:
       reliability: best_effort
       durability: volatile
@@ -86,6 +91,7 @@ streams:
     source: teleop
     topic: /vr/left_pose
     message_type: geometry_msgs/PoseStamped
+    columns: [vr_l_qw, vr_l_qx, vr_l_qy, vr_l_qz, vr_l_px, vr_l_py, vr_l_pz]
     qos:
       reliability: best_effort
       durability: volatile
@@ -120,6 +126,7 @@ streams:
     source: teleop
     topic: /vr/right_pose
     message_type: geometry_msgs/PoseStamped
+    columns: [vr_r_qw, vr_r_qx, vr_r_qy, vr_r_qz, vr_r_px, vr_r_py, vr_r_pz]
     qos:
       reliability: best_effort
       durability: volatile
@@ -154,6 +161,9 @@ streams:
     source: teleop
     topic: /vr/left_buttons
     message_type: std_msgs/Float32MultiArray
+    # ch0/1 presumed trigger/grip (WebXR); ch2-5 unverified on PICO — ch4/ch5 are
+    # the recording-control bindings (delete/toggle). Verify on hardware.
+    columns: [vr_l_trigger, vr_l_grip, vr_l_button_2, vr_l_button_3, vr_l_button_4, vr_l_button_5]
     qos:
       reliability: best_effort
       durability: volatile
@@ -169,6 +179,7 @@ streams:
     source: teleop
     topic: /vr/right_buttons
     message_type: std_msgs/Float32MultiArray
+    columns: [vr_r_trigger, vr_r_grip, vr_r_button_2, vr_r_button_3, vr_r_button_4, vr_r_button_5]
     qos:
       reliability: best_effort
       durability: volatile
@@ -188,6 +199,7 @@ streams:
     source: robot
     topic: /arm/left/joint_commands
     message_type: sensor_msgs/JointState
+    columns: [L_joint_cmd_1, L_joint_cmd_2, L_joint_cmd_3, L_joint_cmd_4, L_joint_cmd_5, L_joint_cmd_6, L_joint_cmd_7, L_gripper_cmd]
     qos:
       reliability: best_effort
       durability: volatile
@@ -203,6 +215,7 @@ streams:
     source: robot
     topic: /arm/right/joint_commands
     message_type: sensor_msgs/JointState
+    columns: [R_joint_cmd_1, R_joint_cmd_2, R_joint_cmd_3, R_joint_cmd_4, R_joint_cmd_5, R_joint_cmd_6, R_joint_cmd_7, R_gripper_cmd]
     qos:
       reliability: best_effort
       durability: volatile
@@ -218,6 +231,7 @@ streams:
     source: robot
     topic: /arm/left/target_pose
     message_type: geometry_msgs/PoseStamped
+    columns: [ik_l_qw, ik_l_qx, ik_l_qy, ik_l_qz, ik_l_px, ik_l_py, ik_l_pz]
     qos:
       reliability: best_effort
       durability: volatile
@@ -251,6 +265,7 @@ streams:
     source: robot
     topic: /arm/right/target_pose
     message_type: geometry_msgs/PoseStamped
+    columns: [ik_r_qw, ik_r_qx, ik_r_qy, ik_r_qz, ik_r_px, ik_r_py, ik_r_pz]
     qos:
       reliability: best_effort
       durability: volatile
@@ -288,6 +303,7 @@ streams:
     source: robot
     topic: /arm/left/joint_state
     message_type: sensor_msgs/JointState
+    columns: [L_joint_state_1, L_joint_state_2, L_joint_state_3, L_joint_state_4, L_joint_state_5, L_joint_state_6, L_joint_state_7, L_gripper_state]
     qos:
       reliability: best_effort
       durability: volatile
@@ -303,6 +319,7 @@ streams:
     source: robot
     topic: /arm/right/joint_state
     message_type: sensor_msgs/JointState
+    columns: [R_joint_state_1, R_joint_state_2, R_joint_state_3, R_joint_state_4, R_joint_state_5, R_joint_state_6, R_joint_state_7, R_gripper_state]
     qos:
       reliability: best_effort
       durability: volatile

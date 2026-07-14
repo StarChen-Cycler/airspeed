@@ -53,6 +53,23 @@ class ConfiguredStreamAdapter:
         self.binding = binding
         self._validator = boundary_validator
 
+    def effective_columns(self) -> tuple[str, ...]:
+        """Column names this stream will record, after YAML override or auto-derivation.
+
+        Empty tuple means no names can be determined (opaque sequence stream
+        without YAML columns) — resolve_session rejects such streams.
+        """
+        if self.stream.message_type == "sensor_msgs/Image":
+            return ()
+        if self.stream.columns:
+            return self.stream.columns
+        if self.stream.fields and not any(f.type == "sequence" for f in self.stream.fields):
+            # Scalar-field payloads flatten in sorted-key order (see
+            # _collect_scalars); sorted field paths reproduce that exact order,
+            # so auto-derived names always match the recorded values.
+            return tuple(sorted(f.path for f in self.stream.fields))
+        return ()
+
     def register_with(self, writer: Any) -> None:
         """Tell the writer what this stream needs. Derived from the YAML fields contract."""
         if self.stream.message_type == "sensor_msgs/Image":
@@ -62,18 +79,14 @@ class ConfiguredStreamAdapter:
                 self.stream.name, width=640, height=480, channels=3,
                 reencode_to_jpeg=reencode,
             )
-        elif self.stream.fields:
-            # If any field is a sequence, dims must be determined at runtime
-            has_sequence = any(f.type == "sequence" for f in self.stream.fields)
-            if has_sequence:
-                writer.register_vector_stream(self.stream.name, dims=0)
-            else:
-                writer.register_vector_stream(
-                    self.stream.name, dims=len(self.stream.fields),
-                    columns=tuple(f.path for f in self.stream.fields),
-                )
         else:
-            writer.register_vector_stream(self.stream.name, dims=0)
+            # If any field is a sequence, dims are determined at runtime and
+            # the writer validates sample width against the declared columns.
+            has_sequence = any(f.type == "sequence" for f in self.stream.fields)
+            dims = 0 if has_sequence else len(self.stream.fields)
+            writer.register_vector_stream(
+                self.stream.name, dims=dims, columns=self.effective_columns(),
+            )
 
     def adapt(self, message: Any, *, received_at: datetime) -> WriterSample:
         payload = self.binding.payload_builder(message, self.stream)
@@ -121,7 +134,17 @@ class AdapterRegistry:
         return ConfiguredStreamAdapter(stream, binding, self._boundary_validator)
 
     def resolve_session(self, config: SessionConfig) -> dict[str, ConfiguredStreamAdapter]:
-        return {name: self.resolve(stream) for name, stream in config.streams}
+        adapters = {name: self.resolve(stream) for name, stream in config.streams}
+        missing = sorted(
+            name for name, adapter in adapters.items() if not adapter.effective_columns()
+            and adapter.stream.message_type != "sensor_msgs/Image"
+        )
+        if missing:
+            raise AdapterError(
+                f"streams without column names: {missing}; add 'columns:' to the "
+                "session YAML (opaque sequence streams cannot be auto-derived)"
+            )
+        return adapters
 
     def _resolve_binding(self, stream: StreamConfig) -> AdapterBinding:
         matches = self._by_sig.get((stream.source, stream.message_type), {})

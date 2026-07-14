@@ -127,6 +127,7 @@ class StreamConfig:
     frame_id: str | None = None
     image_encoding: ImageEncoding | None = None
     fields: tuple[FieldRule, ...] = ()
+    columns: tuple[str, ...] = ()
     notes: str | None = None
 
     _ALLOWED_SOURCES = frozenset({"teleop", "robot", "sensor"})
@@ -154,6 +155,17 @@ class StreamConfig:
             )
         if not isinstance(self.fields, tuple):
             object.__setattr__(self, "fields", tuple(self.fields))
+        if not isinstance(self.columns, tuple):
+            object.__setattr__(self, "columns", tuple(self.columns))
+        for c in self.columns:
+            if not isinstance(c, str) or not c.strip():
+                raise SessionConfigError(
+                    "StreamConfig.columns entries must be non-empty strings"
+                )
+        if len(set(self.columns)) != len(self.columns):
+            raise SessionConfigError(
+                f"StreamConfig.columns must be unique; got {list(self.columns)!r}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -171,6 +183,8 @@ class StreamConfig:
             payload["image_encoding"] = self.image_encoding.value
         if self.fields:
             payload["fields"] = [f.to_dict() for f in self.fields]
+        if self.columns:
+            payload["columns"] = list(self.columns)
         if self.notes is not None:
             payload["notes"] = self.notes
         return payload
@@ -339,7 +353,7 @@ class SessionConfig:
     _ROOT_KEYS = frozenset({"schema_version", "session", "storage", "streams"})
     _STREAM_KEYS = frozenset({
         "source", "topic", "message_type", "qos", "time_domain",
-        "expected_rate_hz", "frame_id", "image_encoding", "fields", "notes",
+        "expected_rate_hz", "frame_id", "image_encoding", "fields", "columns", "notes",
     })
     _SESSION_KEYS = frozenset({
         "name", "task_id", "operator_id", "devices", "recording_control", "notes",
@@ -595,6 +609,18 @@ def _parse_stream(name: str, raw: Any) -> StreamConfig:
                 required=bool(f.get("required", True)),
             ))
 
+    columns_raw = raw.get("columns")
+    columns: list[str] = []
+    if columns_raw is not None:
+        if not isinstance(columns_raw, list):
+            raise SessionConfigError(f"streams.{name}.columns must be a list")
+        for i, c in enumerate(columns_raw):
+            if not isinstance(c, str) or not c.strip():
+                raise SessionConfigError(
+                    f"streams.{name}.columns[{i}] must be a non-empty string"
+                )
+            columns.append(c)
+
     rate_hz_raw = raw.get("expected_rate_hz")
     expected_rate_hz: float | None = None
     if rate_hz_raw is not None:
@@ -616,6 +642,7 @@ def _parse_stream(name: str, raw: Any) -> StreamConfig:
         frame_id=_optional_str(raw, "frame_id"),
         image_encoding=image_encoding,
         fields=tuple(fields),
+        columns=tuple(columns),
         notes=_optional_str(raw, "notes"),
     )
 

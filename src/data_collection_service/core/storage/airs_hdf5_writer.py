@@ -197,6 +197,8 @@ class _VectorBuffer:
         self.name = name
         self._grp = grp
         self._dims = dims
+        cols = grp.attrs.get("columns")
+        self._n_columns = len(json.loads(cols)) if cols is not None else None
         self._data_buf: list[np.ndarray] = []
         self._ts_buf: list[np.uint64] = []
         self._total = 0
@@ -212,6 +214,11 @@ class _VectorBuffer:
         elif arr.size != self._dims:
             raise AirsHdf5WriterError(
                 f"{self.name}: dimension mismatch — expected {self._dims}, got {arr.size}"
+            )
+        if self._n_columns is not None and arr.size != self._n_columns:
+            raise AirsHdf5WriterError(
+                f"{self.name}: sample has {arr.size} values but "
+                f"{self._n_columns} columns are declared"
             )
         self._data_buf.append(arr.astype(np.float32))
         self._ts_buf.append(np.uint64(timestamp_ns))
@@ -249,8 +256,9 @@ class _VectorBuffer:
         self._grp.attrs["frames"] = self._total
         self._grp.attrs["sample_rate"] = float(file.attrs.get("sample_rate", 0.0))
         if "columns" not in self._grp.attrs:
-            self._grp.attrs["columns"] = json.dumps(
-                [f"dim_{j}" for j in range(self._dims)]
+            raise AirsHdf5WriterError(
+                f"{self.name}: no column names registered; vector streams "
+                "must declare columns (see session YAML 'columns:' key)"
             )
 
 

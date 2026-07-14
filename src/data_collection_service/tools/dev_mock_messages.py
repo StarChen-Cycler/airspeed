@@ -39,6 +39,23 @@ def make_array_message(values: object) -> SimpleNamespace:
     return SimpleNamespace(data=values)
 
 
+def make_joint_state_message(
+    timestamp: datetime, *,
+    frame_id: str = "",
+    position: object = None,
+) -> SimpleNamespace:
+    # 7 arm joints + 1 gripper, matching the session YAML joint stream columns.
+    if position is None:
+        position = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+    return SimpleNamespace(
+        header=make_header(timestamp, frame_id),
+        name=[f"joint_{i + 1}" for i in range(len(position))],
+        position=list(position),
+        velocity=[],
+        effort=[],
+    )
+
+
 def make_image_message(
     timestamp: datetime, *,
     frame_id: str = "camera_front_optical_frame",
@@ -75,6 +92,9 @@ def make_message_for_stream(
         if "button" in stream_name:
             return make_array_message([1.0, 0.0, 0.0, 0.0, 0.0, 0.5])
         return make_array_message([0.0, 0.1, 0.2])
+
+    if msg_type == "sensor_msgs/JointState":
+        return make_joint_state_message(timestamp, frame_id=frame_id)
 
     if msg_type == "sensor_msgs/Image":
         return make_image_message(timestamp, frame_id=frame_id)
@@ -122,5 +142,5 @@ _MINIMAL_JPEG = bytes([
 
 __all__ = [
     "make_array_message", "make_header", "make_image_message",
-    "make_message_for_stream", "make_pose_message",
+    "make_joint_state_message", "make_message_for_stream", "make_pose_message",
 ]
