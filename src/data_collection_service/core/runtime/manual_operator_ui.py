@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import uuid
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -19,7 +21,7 @@ class ManualOperatorUI:
     def __init__(
         self, *, state_machine, control_router, stream_tracker,
         storage_root: str = "data/episodes",
-        on_task_changed: Callable[[str | None], None] | None = None,
+        on_task_changed: Callable[[str | None, dict | None], None] | None = None,
         host: str = "127.0.0.1", port: int = 8765,
         logger: Callable[[str], None] | None = None,
     ) -> None:
@@ -27,7 +29,7 @@ class ManualOperatorUI:
         self._control = control_router
         self._tracker = stream_tracker
         self._storage_root = Path(storage_root)
-        self._on_task_changed = on_task_changed or (lambda _: None)
+        self._on_task_changed = on_task_changed or (lambda *args: None)
         self._host = host
         self._port = port
         self._log = logger or (lambda _: None)
@@ -79,6 +81,7 @@ class ManualOperatorUI:
             current = self._count_episodes(d.name)
             tasks.append({
                 "name": d.name,
+                "prompt": meta.get("task_prompt", ""),
                 "current": current,
                 "target": meta.get("target_episodes", 0),
             })
@@ -88,15 +91,35 @@ class ManualOperatorUI:
         meta = self._read_task_meta(task_name)
         if meta is None:
             raise ValueError(f"task {task_name!r} not found")
+        if not meta.get("task_prompt"):
+            raise ValueError(
+                f"task {task_name!r} has no task prompt (created before prompts "
+                "existed); create a new task instead"
+            )
         self._active_task = task_name
         self._task_target = meta.get("target_episodes", 0)
-        self._on_task_changed(task_name)
+        self._on_task_changed(task_name, meta)
         current = self._count_episodes(task_name)
         return {"ok": True, "task_name": task_name, "current": current, "target": self._task_target}
 
-    def _create_task(self, name: str, target: int) -> dict:
-        name = name.strip().replace(" ", "-")
-        base = name
+    _PROMPT_RE = re.compile(r"^[A-Za-z0-9 ]{1,200}$")
+    _TASK_STRUCTURES = ("atomic_single", "composite_multistage", "long_horizon")
+
+    def _create_task(self, prompt: str, target: int, task_structure: str,
+                     deformable_objects: bool) -> dict:
+        prompt = prompt.strip()
+        if not self._PROMPT_RE.fullmatch(prompt):
+            raise ValueError(
+                "invalid task prompt: letters, digits and spaces only, max 200 chars"
+            )
+        if task_structure not in self._TASK_STRUCTURES:
+            raise ValueError(
+                f"invalid task_structure {task_structure!r}; "
+                f"expected one of {self._TASK_STRUCTURES}"
+            )
+        # Folder slug: lowercase, spaces->hyphens, 64-char cap, _vN dedup.
+        base = prompt.lower().replace(" ", "-")[:64]
+        name = base
         counter = 1
         while self._task_dir(name).exists():
             counter += 1
@@ -105,6 +128,10 @@ class ManualOperatorUI:
         task_dir.mkdir(parents=True, exist_ok=True)
         meta = {
             "task_name": name,
+            "task_prompt": prompt,
+            "task_id": uuid.uuid4().hex[:12],
+            "task_structure": task_structure,
+            "deformable_objects": bool(deformable_objects),
             "target_episodes": target,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -154,7 +181,12 @@ class ManualOperatorUI:
                 body = json.loads(self.rfile.read(length)) if length > 0 else {}
                 try:
                     if action == "task/create":
-                        result = ui._create_task(str(body.get("name", "")), int(body.get("target", 0)))
+                        result = ui._create_task(
+                            str(body.get("prompt", "")),
+                            int(body.get("target", 0)),
+                            str(body.get("task_structure", "")),
+                            bool(body.get("deformable_objects", False)),
+                        )
                     elif action == "task/select":
                         result = ui._select_task(str(body.get("name", "")))
                     self._serve_json(result)
@@ -327,7 +359,16 @@ tr:hover{background:#1c2128}
 <div class="card">
 <div class="card-title">Task</div>
 <div class="task-row">
-  <input class="task-input" id="task-name" placeholder="task name" autocomplete="off">
+  <input class="task-input" id="task-prompt" placeholder="task prompt (letters/digits/spaces)" autocomplete="off" style="width:320px" maxlength="200">
+  <select class="task-input" id="task-structure" title="task structure" style="width:170px">
+    <option value="atomic_single">atomic single</option>
+    <option value="composite_multistage">composite multistage</option>
+    <option value="long_horizon">long horizon</option>
+  </select>
+  <select class="task-input" id="task-deformable" title="deformable objects" style="width:130px">
+    <option value="false">rigid objects</option>
+    <option value="true">deformable objects</option>
+  </select>
   <input class="task-input task-input-sm" id="task-target" placeholder="#episodes" value="10" autocomplete="off">
   <button class="btn-create" onclick="createTask()">Create</button>
 </div>
@@ -447,7 +488,9 @@ function render(d){
 
   // Disable dropdown + create while recording
   document.getElementById('task-select').disabled=_recording;
-  document.getElementById('task-name').disabled=_recording;
+  document.getElementById('task-prompt').disabled=_recording;
+  document.getElementById('task-structure').disabled=_recording;
+  document.getElementById('task-deformable').disabled=_recording;
   document.getElementById('task-target').disabled=_recording;
 
   let streams=d.streams||{};
@@ -490,7 +533,7 @@ async function refreshTasks(){
     let cur=sel.value;
     sel.innerHTML='<option value="">— select an existing task —</option>';
     _tasks.forEach(function(t){
-      let label=t.name+' ('+t.current+'/'+t.target+')';
+      let label=(t.prompt||t.name)+' ('+t.current+'/'+t.target+')';
       sel.innerHTML+='<option value="'+t.name+'">'+label+'</option>';
     });
     if(cur) sel.value=cur;
@@ -498,15 +541,20 @@ async function refreshTasks(){
 }
 
 async function createTask(){
-  let name=document.getElementById('task-name').value.trim();
+  let prompt=document.getElementById('task-prompt').value.trim();
   let target=parseInt(document.getElementById('task-target').value)||10;
-  if(!name){toastMsg('task/create','Enter a task name',false);return;}
+  let structure=document.getElementById('task-structure').value;
+  let deformable=document.getElementById('task-deformable').value==='true';
+  if(!prompt){toastMsg('task/create','Enter a task prompt',false);return;}
+  if(prompt.length>200){toastMsg('task/create','Prompt too long (max 200 chars)',false);return;}
+  if(!/^[A-Za-z0-9 ]+$/.test(prompt)){toastMsg('task/create','Prompt: letters, digits and spaces only',false);return;}
   try{
-    let r=await fetch('/task/create',{method:'POST',body:JSON.stringify({name:name,target:target})});
+    let r=await fetch('/task/create',{method:'POST',body:JSON.stringify({
+      prompt:prompt,target:target,task_structure:structure,deformable_objects:deformable})});
     let d=await r.json();
     if(d.ok){
       _activeTask=d.task_name;
-      document.getElementById('task-name').value='';
+      document.getElementById('task-prompt').value='';
       document.getElementById('task-select').value=d.task_name;
       toastMsg('task/create','Created: '+d.task_name,true);
     }else{

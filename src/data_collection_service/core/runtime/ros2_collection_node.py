@@ -224,10 +224,11 @@ class PlatformCollectionNode(Node):
         self.get_logger().info(f"ACTION: delete_episode → accepted={result.accepted} {result.message}")
         return resp
 
-    def set_active_task(self, task_name: str | None) -> None:
-        """Set the active task for episode output routing."""
+    def set_active_task(self, task_name: str | None,
+                        task_meta: dict | None = None) -> None:
+        """Set the active task for episode output routing and root attrs."""
         self._active_task_name = task_name
-        self._writer.set_task(task_name)
+        self._writer.set_task(task_name, task_meta)
 
     # -- manual UI --
 

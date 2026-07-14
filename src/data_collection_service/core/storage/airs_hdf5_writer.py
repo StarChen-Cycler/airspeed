@@ -57,10 +57,16 @@ class AirsHdf5Writer:
         self._file: h5py.File | None = None
         self._streams: dict[str, _StreamBuffer] = {}
         self._task_name: str | None = None
+        self._task_meta: dict | None = None
 
-    def set_task(self, task_name: str | None) -> None:
-        """Set active task name. Episodes are written to {output_dir}/{task_name}/."""
+    def set_task(self, task_name: str | None, task_meta: dict | None = None) -> None:
+        """Set active task. Episodes are written to {output_dir}/{task_name}/.
+
+        task_meta carries the fields written as root attrs at close_episode:
+        task_prompt, task_id, task_structure, deformable_objects.
+        """
         self._task_name = task_name
+        self._task_meta = task_meta
 
     # -- episode lifecycle --
 
@@ -89,6 +95,14 @@ class AirsHdf5Writer:
         self._file.attrs["series_number"] = self._series_number
         self._file.attrs["sample_rate"] = float(sample_rate)
         self._file.attrs["frames"] = total_frames
+        if self._task_meta:
+            self._file.attrs["task_name"] = str(self._task_meta.get("task_name", ""))
+            self._file.attrs["task_prompt"] = str(self._task_meta.get("task_prompt", ""))
+            self._file.attrs["task_id"] = str(self._task_meta.get("task_id", ""))
+            self._file.attrs["task_structure"] = str(self._task_meta.get("task_structure", ""))
+            self._file.attrs["deformable_objects"] = bool(
+                self._task_meta.get("deformable_objects", False)
+            )
         if success is not None:
             self._file.attrs["success"] = bool(success)
         if termination_reason:
