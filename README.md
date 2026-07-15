@@ -82,8 +82,8 @@ The data collection service has no baked-in knowledge of specific hardware.
 ## Quick Start
 
 ```bash
-git clone https://github.com/StarChen-Cycler/airspeed-data-collection-zyc.git
-cd airspeed-v1.3
+git clone https://github.com/airs-cuhk/airspeed.git
+cd airspeed
 ```
 
 ### Environment Setup
@@ -150,7 +150,7 @@ The IK adaptor monitoring UI is at `http://localhost:5200`.
 ## Project Structure
 
 ```
-airspeed-v1.3/
+airspeed/
 ├── README.md
 └── src/
     ├── teleoperation_interface/             # CONTRACT: PoseStamped + Float32MultiArray
