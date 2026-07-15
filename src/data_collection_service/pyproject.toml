@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "airspeed-data-collection"
 version = "1.0.0"
@@ -8,6 +12,11 @@ dependencies = [
     "numpy>=1.21",
     "pyyaml>=6.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*"]
+exclude = ["data*", "config*", "launch*", "tools*", "tests*", ".pytest_cache*"]
 
 [project.optional-dependencies]
 dev = [
