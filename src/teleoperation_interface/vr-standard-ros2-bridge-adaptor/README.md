@@ -58,6 +58,34 @@ python3 vr_bridge_server.py
 Two connection methods. USB/ADB is simpler and more reliable. WiFi works when the
 device and host are on the same network.
 
+### Prerequisite: Enable Developer Mode and ADB
+
+Both methods require **Developer Mode** and **USB Debugging** enabled on the VR device.
+
+| Device | Steps |
+|--------|-------|
+| **Meta Quest** | Meta Quest app → Devices → Developer Mode (toggle on). Then in the headset: Settings → Developer → enable **USB Debugging**. |
+| **Pico** | Settings → About → tap **Build Number** 7 times. Then Settings → Developer Options → enable **USB Debugging**. |
+
+After enabling USB debugging:
+
+1. Connect the VR device to the host with a USB cable.
+2. A dialog will appear inside the headset asking you to **authorize this computer's RSA key**. Check **Always allow** and confirm.
+3. On the host, verify ADB sees the device:
+
+   ```bash
+   adb devices -l
+   ```
+
+   You should see an entry like:
+
+   ```text
+   PA921JMGL4250142G      device usb:2-8.1 product:sparrow model:A9210 device:sparrow
+   ```
+
+   If the list is empty, re-check the headset-side USB debugging toggle, unplug and
+   replug the cable, and authorize the RSA prompt.
+
 ### Method 1: USB + ADB (recommended)
 
 The VR device connects through the USB cable. ADB forwards a local port on the device
@@ -72,6 +100,16 @@ python3 vr_bridge_server.py --port 5100 --host 0.0.0.0 --no-ssl
 # HTTPS (self-signed cert for 127.0.0.1 included in pem/)
 python3 vr_bridge_server.py --port 5100 --host 127.0.0.1
 ```
+
+When the bridge starts successfully, the log should show the ADB reverse tunnel:
+
+```text
+[INFO] ADB reverse tcp:5100 → <device-serial>
+======== Running on https://127.0.0.1:5100 ========
+```
+
+If you see `WARNING: ADB: no devices connected`, the device is not exposing its ADB
+interface. See the troubleshooting steps below.
 
 **On the VR device:**
 
@@ -90,6 +128,34 @@ source /opt/ros/humble/setup.bash
 ros2 topic hz /vr/right_pose       # should show ~60 Hz
 ros2 topic echo /vr/right_pose --once
 ```
+
+**Troubleshooting: ADB not detected**
+
+If `adb devices -l` is empty even though Developer Mode is on:
+
+- Make sure **USB Debugging** (not just Developer Mode) is enabled.
+- Look for the **RSA authorization dialog** in the headset and accept it.
+- Try a different USB port or cable. Some cables are charge-only.
+- Restart the ADB server:
+
+  ```bash
+  adb kill-server && adb start-server
+  ```
+
+- Check that the device exposes an ADB interface:
+
+  ```bash
+  lsusb
+  ```
+
+  A Pico 4 Ultra in ADB mode will show something like:
+
+  ```text
+  Bus 002 Device 019: ID 2d40:00b6 Pico PICO 4 Ultra
+  ```
+
+  and `adb devices` should list it. If `lsusb` shows only `MTP`/`PTP` interfaces and
+  no ADB interface, USB debugging is still disabled on the device.
 
 ### Method 2: WiFi / LAN
 
@@ -112,13 +178,6 @@ python3 vr_bridge_server.py --port 5100 --host <host-ip>
 2. Open the browser and navigate to `https://<host-ip>:5100`
 3. Accept the self-signed certificate warning
 4. Enter VR/immersive mode when prompted
-
-### Prerequisite: VR Device Developer Mode
-
-Both methods require developer mode enabled on the VR device:
-
-- **Meta Quest**: Phone app → Devices → Developer Mode (toggle on)
-- **Pico**: Settings → About → tap Build Number 7 times → Settings → Developer Options
 
 ## Configuration
 
