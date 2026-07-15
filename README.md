@@ -79,6 +79,15 @@ The data collection service has no baked-in knowledge of specific hardware.
 
 ---
 
+## Prerequisites
+
+- **ROS2 Humble** installed at `/opt/ros/humble`.
+- **Python 3.10**. ROS2 Humble's Python bindings are compiled against the
+  system Python 3.10, so the run scripts must see a 3.10 interpreter. Use the
+  `airspeed` Conda environment created below, or `/usr/bin/python3.10`.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -299,6 +308,11 @@ in a session YAML, and start the collector. No changes to the core pipeline need
 **Q: How do I share datasets?**
 Convert HDF5 to LeRobot v3 format and push to HuggingFace Hub, or use Parquet/Zarr
 for direct consumption in training pipelines.
+
+**Q: `rclpy not installed; source a ROS2 environment first` even though ROS2 is installed?**
+The active Python interpreter is not 3.10. ROS2 Humble's `rclpy` is compiled for
+Python 3.10. Activate the `airspeed` Conda environment (`conda activate airspeed`)
+or explicitly use `/usr/bin/python3.10`.
 
 ---
 
