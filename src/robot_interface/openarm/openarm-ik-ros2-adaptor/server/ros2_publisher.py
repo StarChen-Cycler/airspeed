@@ -99,13 +99,19 @@ class ArmCommandPublisher:
         if not self._ros2_available or self._thread is None:
             return
 
+        # Stamp at the solver handoff, not in the daemon loop: the recorded
+        # time is when the solution was produced (solve completion), even if
+        # the publish loop picks it up a spin cycle later. None when the
+        # ROS2 clock is not yet initialized — the loop stamps as fallback.
+        stamp = self._get_clock().now().to_msg() if self._get_clock is not None else None
+
         # Shared-state handoff: the solver's async event loop calls publish()
         # and writes the latest data to a tuple. The ROS2 daemon thread reads
         # this tuple on its next spin cycle. No queue — only the latest solve
         # matters. This is safe because we only care about freshest data
         # (BEST_EFFORT QoS means dropped intermediate values are acceptable).
         self._latest = (
-            left_joints, right_joints,
+            stamp, left_joints, right_joints,
             left_target_xyz, left_target_quat_xyzw,
             right_target_xyz, right_target_quat_xyzw,
         )
@@ -144,6 +150,7 @@ class ArmCommandPublisher:
         self._left_pose_pub = node.create_publisher(PoseStamped, '/arm/left/target_pose', qos)
         self._right_pose_pub = node.create_publisher(PoseStamped, '/arm/right/target_pose', qos)
         clock = node.get_clock()
+        self._get_clock = node.get_clock
 
         executor = SingleThreadedExecutor()
         executor.add_node(node)
@@ -157,8 +164,10 @@ class ArmCommandPublisher:
             while self._thread is not None and rclpy.ok():
                 if self._has_data:
                     self._has_data = False
-                    (lj, rj, lxyz, lquat, rxyz, rquat) = self._latest
-                    now = clock.now().to_msg()
+                    (stamp, lj, rj, lxyz, lquat, rxyz, rquat) = self._latest
+                    # Prefer the handoff stamp (solve-completion time); fall
+                    # back to loop time if the handoff preceded clock init.
+                    now = stamp if stamp is not None else clock.now().to_msg()
 
                     # Left joint commands
                     self._publish_joint_state(self._left_joint_pub, now, 'base_link',
