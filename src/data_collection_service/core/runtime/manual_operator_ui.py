@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -15,6 +16,57 @@ import time as _time
 from typing import Any, Callable
 
 
+_PREVIEW_JPEG_QUALITY = 60
+
+
+def _encode_preview_jpeg(frame: tuple) -> bytes:
+    """Encode one cached frame to JPEG for the browser preview.
+
+    frame: (data, encoding, width, height, ts_ns). jpeg payloads pass through
+    unchanged; raw pixel encodings are encoded with PIL at preview quality.
+    """
+    data, encoding, width, height, _ts_ns = frame
+    if encoding == "jpeg":
+        return data
+    if not width or not height or width <= 0 or height <= 0:
+        raise ValueError(f"raw frame without valid dims: {width}x{height}")
+    from PIL import Image
+    if encoding in ("rgb8", "bgr8"):
+        img = Image.frombytes("RGB", (width, height), data)
+    elif encoding == "mono8":
+        img = Image.frombytes("L", (width, height), data)
+    else:
+        raise ValueError(f"unsupported preview encoding: {encoding!r}")
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=_PREVIEW_JPEG_QUALITY)
+    return buf.getvalue()
+
+
+def build_image_stream_info(image_streams, latest_frames, tracker_snapshot):
+    """Discovery payload for the adaptive camera grid.
+
+    Built from the session's declared image streams (never hardcoded), the
+    latest-frame cache, and the stream tracker's live metrics.
+    """
+    out = []
+    for meta in image_streams:
+        name = meta["name"]
+        cached = latest_frames.get(name)
+        status, metrics = tracker_snapshot.get(name, (None, None))
+        out.append({
+            "name": name,
+            "encoding": meta.get("encoding"),
+            "transport": meta.get("transport"),
+            "cached": cached is not None,
+            "width": cached[2] if cached else None,
+            "height": cached[3] if cached else None,
+            "status": status.value if status is not None else "absent",
+            "rate": metrics.observed_rate_hz if metrics is not None else None,
+            "age_ms": metrics.last_timestamp_age_ms if metrics is not None else None,
+        })
+    return out
+
+
 class ManualOperatorUI:
     """Stateless HTTP control panel. Reads platform state, renders, sends actions."""
 
@@ -24,6 +76,8 @@ class ManualOperatorUI:
         on_task_changed: Callable[[str | None, dict | None], None] | None = None,
         host: str = "127.0.0.1", port: int = 8765,
         logger: Callable[[str], None] | None = None,
+        image_streams: list | None = None,
+        latest_frames: dict | None = None,
     ) -> None:
         self._state = state_machine
         self._control = control_router
@@ -33,6 +87,8 @@ class ManualOperatorUI:
         self._host = host
         self._port = port
         self._log = logger or (lambda _: None)
+        self._image_streams = image_streams or []
+        self._latest_frames = latest_frames if latest_frames is not None else {}
         self._server: HTTPServer | None = None
         self._active_task: str | None = None
         self._task_target: int = 0
@@ -155,6 +211,11 @@ class ManualOperatorUI:
                         self._serve_sse()
                     elif self.path == "/task/list":
                         self._serve_json({"tasks": ui._list_tasks()})
+                    elif self.path == "/api/image-streams":
+                        self._serve_json({"streams": build_image_stream_info(
+                            ui._image_streams, ui._latest_frames, ui._tracker.snapshot())})
+                    elif self.path.startswith("/camera/") and self.path.endswith("/stream"):
+                        self._serve_mjpeg(self.path[len("/camera/"):-len("/stream")])
                     else:
                         self.send_error(404)
                 except (BrokenPipeError, ConnectionResetError):
@@ -231,6 +292,38 @@ class ManualOperatorUI:
                         self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
                         self.wfile.flush()
                         _time.sleep(0.2)  # 5 Hz update rate
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+            def _serve_mjpeg(self, name):
+                known = {m["name"] for m in ui._image_streams}
+                if name not in known:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                last_ts = None
+                try:
+                    while True:
+                        frame = ui._latest_frames.get(name)
+                        # Re-encode only when the frame changed (≈ stream rate,
+                        # capped at ~10 fps for the preview).
+                        if frame is not None and frame[4] != last_ts:
+                            last_ts = frame[4]
+                            try:
+                                jpeg = _encode_preview_jpeg(frame)
+                            except Exception:
+                                jpeg = None
+                            if jpeg is not None:
+                                self.wfile.write(b"--frame\r\n")
+                                self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                                self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
+                                self.wfile.write(jpeg)
+                                self.wfile.write(b"\r\n")
+                                self.wfile.flush()
+                        _time.sleep(0.1)
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
@@ -352,6 +445,14 @@ tr:hover{background:#1c2128}
 .task-info-name{color:#58a6ff;font-weight:600}
 .task-info-count{color:#c9d1d9;font-variant-numeric:tabular-nums}
 .task-none{color:#8b949e;font-size:13px}
+
+/* Camera feeds (adaptive grid — panels are built from /api/image-streams) */
+.cam-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.cam-panel{background:#0d1117;border:1px solid #30363d;border-radius:6px;overflow:hidden}
+.cam-head{padding:6px 10px;font-size:12px;font-weight:600;color:#f0f6fc;border-bottom:1px solid #21262d}
+.cam-legend{padding:2px 10px 6px;font-size:11px;color:#8b949e;border-bottom:1px solid #21262d}
+.cam-panel img{width:100%;display:block;background:#000;aspect-ratio:4/3;object-fit:contain}
+.cam-empty{padding:24px;text-align:center;color:#484f58;font-size:12px}
 </style></head><body>
 <h1>Data Collection Service</h1>
 <div id="toast"></div>
@@ -407,6 +508,11 @@ tr:hover{background:#1c2128}
 <div class="card">
 <div class="card-title">Stream Status</div>
 <div id="streams"><span style="color:#8b949e">Loading...</span></div>
+</div>
+
+<div class="card" id="cam-card" style="display:none">
+<div class="card-title">Camera Feeds</div>
+<div id="cam-grid" class="cam-grid"></div>
 </div>
 
 <div class="footer">Data Collection Service · single source of truth · real-time</div>
@@ -600,8 +706,45 @@ function toastMsg(action,msg,ok){
   setTimeout(function(){let m=t.querySelector('.toast-msg');if(m)m.remove()},4000);
 }
 
+var _camKey='';
+async function refreshCams(){
+  try{
+    let r=await fetch('/api/image-streams');
+    let d=await r.json();
+    let streams=d.streams||[];
+    document.getElementById('cam-card').style.display=streams.length?'block':'none';
+    let grid=document.getElementById('cam-grid');
+    // Rebuild panels only when the stream set or cached-state changes —
+    // never hardcoded; anything the session declares shows up here.
+    let key=streams.map(function(s){return s.name+(s.cached?'+':'-');}).join(',');
+    if(key!==_camKey){
+      _camKey=key;
+      grid.innerHTML='';
+      streams.forEach(function(s){
+        let panel=document.createElement('div');
+        panel.className='cam-panel';
+        let body=s.cached
+          ? '<img src="/camera/'+s.name+'/stream" alt="'+s.name+'">'
+          : '<div class="cam-empty">no frames yet</div>';
+        panel.innerHTML='<div class="cam-head">'+s.name+'</div>'+
+          '<div class="cam-legend" id="cam-legend-'+s.name+'"></div>'+body;
+        grid.appendChild(panel);
+      });
+    }
+    streams.forEach(function(s){
+      let legend=document.getElementById('cam-legend-'+s.name);
+      if(!legend) return;
+      let dims=(s.width&&s.height)?s.width+'×'+s.height:'—';
+      let rate=s.rate!=null?s.rate.toFixed(1)+' Hz':'—';
+      legend.textContent=[s.encoding,s.transport,dims,rate,s.status].filter(Boolean).join(' · ');
+    });
+  }catch(e){/* retry next tick */}
+}
+
 refreshTasks();
 setInterval(refreshTasks, 2000);
+refreshCams();
+setInterval(refreshCams, 3000);
 </script></body></html>"""
 
 

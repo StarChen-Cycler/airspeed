@@ -137,6 +137,7 @@ class PlatformCollectionNode(Node):
         self._adapter_registry = AdapterRegistry.with_defaults()
         self._adapters = self._adapter_registry.resolve_session(self._config)
 
+        self._latest_frames: dict = {}
         self._zenoh_channel = None
         self._create_subscriptions()
         self._create_services()
@@ -187,6 +188,12 @@ class PlatformCollectionNode(Node):
             now = datetime.now(timezone.utc)
             sample = adapter.adapt(msg, received_at=now)
             self._stream_tracker.record_valid(stream_name, sample.timestamp_ns)
+            if sample.image_data is not None:
+                # Cache latest frame for the dashboard preview (any state).
+                self._latest_frames[stream_name] = (
+                    sample.image_data, sample.encoding, sample.width,
+                    sample.height, sample.timestamp_ns,
+                )
             if not self._state_machine.is_recording:
                 return
             if sample.image_data is not None:
@@ -253,6 +260,15 @@ class PlatformCollectionNode(Node):
     def _start_manual_ui(self, host: str, port: int) -> None:
         try:
             from core.runtime.manual_operator_ui import ManualOperatorUI
+            image_streams = [
+                {
+                    "name": name,
+                    "encoding": (s.image_encoding.value if s.image_encoding else "raw"),
+                    "transport": s.transport,
+                }
+                for name, s in self._config.streams
+                if s.message_type == "sensor_msgs/Image"
+            ]
             self._ui = ManualOperatorUI(
                 state_machine=self._state_machine,
                 control_router=self._control_router,
@@ -261,6 +277,8 @@ class PlatformCollectionNode(Node):
                 on_task_changed=self.set_active_task,
                 host=host, port=port,
                 logger=self.get_logger().info,
+                image_streams=image_streams,
+                latest_frames=self._latest_frames,
             )
             self._ui.start()
             self.get_logger().info(f"manual UI at http://{host}:{port}")
