@@ -206,6 +206,11 @@ returns — before color conversion and JPEG encoding — because the RealSense 
 does not expose hardware timestamps. Recorded stamps therefore sit ~1–5 ms from
 exposure instead of absorbing variable encode latency, and `ros_header` stays usable.
 
+Raw frames also bypass ROS2 on the wire: rclpy costs ~130 ms per ~1 MB image, so
+the adaptor publishes raw pixels over a zenoh side channel (~0.9 ms). Declare
+`transport: zenoh` on the stream so the collector listens there. JPEG streams and
+CameraInfo use normal ROS2 topics.
+
 ## IMU Convention
 
 `sensor_msgs/Imu` is the standard message for inertial measurements.

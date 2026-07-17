@@ -26,6 +26,21 @@ late subscribers receive intrinsics without waiting for a republish.
 color conversion and JPEG encoding — recorded timestamps reflect frame return
 (≈ exposure time), not publish or post-encode time.
 
+## Zenoh side channel (raw frames)
+
+Raw frames (`encoding != "jpeg"`) do **not** travel on ROS2 image topics: rclpy
+costs ~130 ms per ~1 MB message, so raw pixels are published over a zenoh side
+channel at ~0.9 ms (measured). JPEG frames and CameraInfo stay on ROS2.
+
+- Listens on `tcp/0.0.0.0:7447`, one publisher per stream key (the ROS topic
+  path without the leading slash, e.g. `camera/head/image_raw`).
+- Envelope: `struct <QQHHB (ts_ns, seq, width, height, enc_len)` + encoding
+  bytes + frame bytes. `ts_ns` is the same creation-time stamp (frame return).
+- Requires `pip install eclipse-zenoh`.
+- The collector consumes these streams with `transport: zenoh` in the session
+  YAML (see examples below).
+- `--no-side-channel` restores the old ROS2 raw path (slow; A/B debugging only).
+
 ## Quick Start
 
 ```bash
@@ -166,6 +181,7 @@ streams:
     message_type: "sensor_msgs/Image"
     time_domain: ros_header
     image_encoding: raw
+    transport: zenoh
     qos:
       reliability: best_effort
       durability: volatile
@@ -182,6 +198,7 @@ streams:
     message_type: "sensor_msgs/Image"
     time_domain: ros_header
     image_encoding: raw
+    transport: zenoh
     qos:
       reliability: best_effort
       durability: volatile
@@ -198,6 +215,7 @@ streams:
     message_type: "sensor_msgs/Image"
     time_domain: ros_header
     image_encoding: raw
+    transport: zenoh
     qos:
       reliability: best_effort
       durability: volatile

@@ -83,6 +83,33 @@ The collector records `header.stamp` as the canonical HDF5 timestamp for every
 stream with `time_domain: ros_header` (sub-microsecond `datetime` quantization,
 uniform across streams).
 
+### 2.3 Zenoh side channel (high-bandwidth streams)
+
+rclpy costs ~130 ms per ~1 MB message (per-field conversion), so bulk streams
+declare `transport: zenoh` in the session YAML and bypass ROS2 entirely. Used
+by the camera adaptor for raw frames; also intended for tactile-style arrays
+(`sensor_msgs/Joy`, which carries a header).
+
+Contract (shared by producer and collector — keep them in sync):
+
+- **Key**: the stream's ROS topic path without the leading slash
+  (`camera/head/image_raw`).
+- **Payload**: `struct <QQHHB (ts_ns, seq, width, height, enc_len)` + encoding
+  bytes + body.
+- **Image streams**: `width`/`height` = frame dims, `encoding` = pixel encoding
+  (`rgb8`), body = frame bytes.
+- **Joy streams (tactile)**: `width`/`height` = 0, `encoding` = `float32`,
+  body = little-endian float32 array → `axes`.
+- **Timestamps**: `ts_ns` is captured at creation time by the publisher — the
+  collector treats it exactly like a `header.stamp` (strict `ros_header`
+  contract holds).
+- **Endpoint**: producer listens on `tcp/0.0.0.0:7447`; collector connects to
+  `tcp/127.0.0.1:7447` (point it at the producer host for remote capture).
+- Requires `pip install eclipse-zenoh` on both sides; the collector warns and
+  marks the streams absent if the package is missing.
+- Camera adaptor: raw (default) → zenoh; `--jpeg` → ROS2 topics;
+  `--no-side-channel` → old slow ROS2 raw path (A/B only).
+
 ## 3. Session YAML Schema Reference
 
 Top level: `schema_version`, `session`, `storage`, `streams`. Unknown keys are
@@ -135,6 +162,7 @@ Each binding: `stream_name` (required), `button_index` (int ≥ 0), `threshold`
 | `topic` | string | yes | ROS2 topic to subscribe |
 | `message_type` | string | yes | e.g. `sensor_msgs/Joy` — resolved dynamically; must match a binding `(source, message_type)` |
 | `time_domain` | `ros_header` only | no (default `ros_header`) | Strict contract — every stream uses the creation-time header stamp; any other value fails session load |
+| `transport` | `ros2` / `zenoh` | no (default `ros2`) | `zenoh` = consume this stream over the zenoh side channel (see below) — for high-bandwidth streams such as raw images and tactile arrays |
 | `qos.reliability` | `best_effort` / `reliable` | no | Default `best_effort` |
 | `qos.durability` | `volatile` / `transient_local` | no | Default `volatile` |
 | `qos.history` | `keep_last` / `keep_all` | no | Default `keep_last` |
@@ -185,7 +213,7 @@ Current bindings:
 |--------|---------------|
 | teleop | `PoseStamped`, `Joy` |
 | robot | `JointState`, `PoseStamped` |
-| sensor | `Image` |
+| sensor | `Image`, `Joy` |
 
 To add one (three small pieces, no pipeline changes):
 
