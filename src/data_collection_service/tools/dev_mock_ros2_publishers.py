@@ -50,13 +50,14 @@ try:
         QoSProfile,
         ReliabilityPolicy,
     )
-    from sensor_msgs.msg import Image as RosImage
+    from sensor_msgs.msg import Image as RosImage, Joy
     from std_msgs.msg import Float32MultiArray, Header
 except ImportError:
     rclpy = None
     Node = object
     PoseStamped = object
     RosImage = object
+    Joy = object
     Float32MultiArray = object
     Header = object
     Point = object
@@ -193,6 +194,7 @@ _MESSAGE_CLASSES: dict[str, type] = {
     "geometry_msgs/PoseStamped": PoseStamped,
     "sensor_msgs/Image": RosImage,
     "std_msgs/Float32MultiArray": Float32MultiArray,
+    "sensor_msgs/Joy": Joy,
 }
 
 
@@ -245,6 +247,11 @@ def _build_message(
         if "button" in stream_name:
             return Float32MultiArray(data=[1.0, 0.0, 0.0, 0.0, 0.0, 0.5])
         return Float32MultiArray(data=[0.0, 0.1, 0.2])
+
+    if msg_type == "sensor_msgs/Joy":
+        joy = Joy(header=header)
+        joy.axes = [1.0, 0.0, 0.0, 0.0, 0.0, 0.5]
+        return joy
 
     if msg_type == "sensor_msgs/Image":
         if jpeg_size_kb is not None:

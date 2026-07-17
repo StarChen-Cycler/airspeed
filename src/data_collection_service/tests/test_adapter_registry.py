@@ -1,13 +1,16 @@
 """Tests for adapter registry and effective column derivation."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 import pytest
 
 from core.adapters import AdapterError, AdapterRegistry
 from core.config import load_session_config_dict
 
 
-def _make_config(*, drop_pose_columns: bool = False, drop_button_columns: bool = False):
+def _make_config(*, drop_pose_columns: bool = False, drop_button_columns: bool = False, joy_buttons: bool = False):
     streams = {
         "vr_head_pose": {
             "source": "teleop",
@@ -28,9 +31,10 @@ def _make_config(*, drop_pose_columns: bool = False, drop_button_columns: bool =
         "vr_left_buttons": {
             "source": "teleop",
             "topic": "/vr/left_buttons",
-            "message_type": "std_msgs/Float32MultiArray",
+            "message_type": "sensor_msgs/Joy" if joy_buttons else "std_msgs/Float32MultiArray",
             "columns": (["vr_l_trigger", "vr_l_grip"] if not drop_button_columns else None),
-            "fields": [{"path": "data", "type": "sequence"}],
+            "time_domain": "ros_header" if joy_buttons else "ros_receive",
+            "fields": [{"path": "axes" if joy_buttons else "data", "type": "sequence"}],
         },
         "camera_left_wrist": {
             "source": "sensor",
@@ -74,3 +78,22 @@ def test_sequence_stream_without_columns_fails():
     cfg = _make_config(drop_button_columns=True)
     with pytest.raises(AdapterError, match="streams without column names"):
         AdapterRegistry.with_defaults().resolve_session(cfg)
+
+
+def test_joy_buttons_binding_reads_axes_with_header_time():
+    cfg = _make_config(joy_buttons=True)
+    adapters = AdapterRegistry.with_defaults().resolve_session(cfg)
+    adapter = adapters["vr_left_buttons"]
+    assert adapter.effective_columns() == ("vr_l_trigger", "vr_l_grip")
+
+    msg = SimpleNamespace(
+        header=SimpleNamespace(
+            stamp=SimpleNamespace(sec=1700000000, nanosec=500000000),
+            frame_id="",
+        ),
+        axes=[1.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+        buttons=[],
+    )
+    sample = adapter.adapt(msg, received_at=datetime.now(timezone.utc))
+    assert sample.timestamp_ns == 1700000000_500000000
+    assert sample.values == (1.0, 0.0, 0.0, 0.0, 0.0, 0.5)

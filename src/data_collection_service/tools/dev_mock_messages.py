@@ -39,6 +39,16 @@ def make_array_message(values: object) -> SimpleNamespace:
     return SimpleNamespace(data=values)
 
 
+def make_joy_message(
+    values: object, timestamp: datetime, *, frame_id: str = "",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        header=make_header(timestamp, frame_id),
+        axes=list(values),
+        buttons=[],
+    )
+
+
 def make_joint_state_message(
     timestamp: datetime, *,
     frame_id: str = "",
@@ -92,6 +102,9 @@ def make_message_for_stream(
         if "button" in stream_name:
             return make_array_message([1.0, 0.0, 0.0, 0.0, 0.0, 0.5])
         return make_array_message([0.0, 0.1, 0.2])
+
+    if msg_type == "sensor_msgs/Joy":
+        return make_joy_message([1.0, 0.0, 0.0, 0.0, 0.0, 0.5], timestamp, frame_id=frame_id)
 
     if msg_type == "sensor_msgs/JointState":
         return make_joint_state_message(timestamp, frame_id=frame_id)

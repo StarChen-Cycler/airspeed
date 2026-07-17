@@ -165,6 +165,7 @@ def _default_bindings() -> tuple[AdapterBinding, ...]:
     return (
         AdapterBinding("teleop", "geometry_msgs/PoseStamped", "teleop_pose", "teleop_pose", _pose_payload),
         AdapterBinding("teleop", "std_msgs/Float32MultiArray", "teleop_buttons", "teleop_buttons", _buttons_payload),
+        AdapterBinding("teleop", "sensor_msgs/Joy", "teleop_joy_buttons", "teleop_buttons", _joy_payload),
         AdapterBinding("robot", "std_msgs/Float32MultiArray", "robot_joint_positions", "robot_joint_positions", _joint_payload),
         AdapterBinding("robot", "sensor_msgs/JointState", "robot_joint_state", "robot_joint_positions", _joint_state_payload),
         AdapterBinding("robot", "geometry_msgs/PoseStamped", "robot_pose", "robot_pose", _pose_payload),
@@ -179,6 +180,10 @@ def _pose_payload(msg: Any, stream: StreamConfig) -> dict[str, Any]:
 
 def _buttons_payload(msg: Any, _: StreamConfig) -> dict[str, Any]:
     return {"buttons": extract_numeric_sequence(msg)}
+
+
+def _joy_payload(msg: Any, _: StreamConfig) -> dict[str, Any]:
+    return {"buttons": extract_numeric_sequence(msg, field_name="axes")}
 
 
 def _joint_payload(msg: Any, _: StreamConfig) -> dict[str, Any]:

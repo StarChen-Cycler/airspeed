@@ -166,34 +166,35 @@ streams:
   vr_left_buttons:
     source: teleop
     topic: /vr/left_buttons
-    message_type: std_msgs/Float32MultiArray
+    message_type: sensor_msgs/Joy
     # ch0/1 presumed trigger/grip (WebXR); ch2-5 unverified on PICO — ch4/ch5 are
     # the recording-control bindings (delete/toggle). Verify on hardware.
+    # All 6 channels ride in axes (analog-capable); buttons array stays empty.
     columns: [vr_l_trigger, vr_l_grip, vr_l_button_2, vr_l_button_3, vr_l_button_4, vr_l_button_5]
     qos:
       reliability: best_effort
       durability: volatile
       history: keep_last
       depth: 10
-    time_domain: ros_receive
+    time_domain: ros_header
     fields:
-      - path: data
+      - path: axes
         type: sequence
         required: true
 
   vr_right_buttons:
     source: teleop
     topic: /vr/right_buttons
-    message_type: std_msgs/Float32MultiArray
+    message_type: sensor_msgs/Joy
     columns: [vr_r_trigger, vr_r_grip, vr_r_button_2, vr_r_button_3, vr_r_button_4, vr_r_button_5]
     qos:
       reliability: best_effort
       durability: volatile
       history: keep_last
       depth: 10
-    time_domain: ros_receive
+    time_domain: ros_header
     fields:
-      - path: data
+      - path: axes
         type: sequence
         required: true
 
