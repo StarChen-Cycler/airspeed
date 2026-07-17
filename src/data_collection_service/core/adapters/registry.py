@@ -73,11 +73,10 @@ class ConfiguredStreamAdapter:
     def register_with(self, writer: Any) -> None:
         """Tell the writer what this stream needs. Derived from the YAML fields contract."""
         if self.stream.message_type == "sensor_msgs/Image":
-            reencode = (self.stream.image_encoding is not None
-                        and self.stream.image_encoding.value == "jpeg")
             writer.register_image_stream(
                 self.stream.name, width=0, height=0, channels=3,
-                reencode_to_jpeg=reencode,
+                encoding=(self.stream.image_encoding.value
+                          if self.stream.image_encoding else "raw"),
             )
         else:
             # If any field is a sequence, dims are determined at runtime and
@@ -204,6 +203,7 @@ def _writer_sample_from_payload(
             image_data=bytes(data_bytes),
             width=_int_or_none(payload.get("width")),
             height=_int_or_none(payload.get("height")),
+            encoding=payload.get("encoding"),
         )
 
     # Vector: flatten all leaf scalar values depth-first

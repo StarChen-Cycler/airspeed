@@ -178,7 +178,8 @@ def _build_camera_info(frame_id: str, intrinsics: Dict) -> CameraInfo:
 class CameraPublisherNode(Node):
     """Publishes Image + CameraInfo per camera at the hardware's native rate."""
 
-    def __init__(self, cameras: List[Tuple[str, str, Dict, object]], cfg: Dict) -> None:
+    def __init__(self, cameras: List[Tuple[str, str, Dict, object]], cfg: Dict,
+                 *, force_jpeg: bool = False) -> None:
         super().__init__("camera_publisher")
         self._intrinsics = cfg.get("intrinsics", {})
 
@@ -208,7 +209,7 @@ class CameraPublisherNode(Node):
                     "img_pub": img_pub,
                     "info_pub": info_pub,
                     "stype": stype,
-                    "encoding": scfg.get("encoding", "jpeg"),
+                    "encoding": "jpeg" if force_jpeg else scfg.get("encoding", "rgb8"),
                     "jpeg_q": scfg.get("jpeg_quality", 70),
                 })
                 self.get_logger().info(f"Camera: {topic}/{topic_suffix} ({stype})")
@@ -261,17 +262,25 @@ class CameraPublisherNode(Node):
                     # leak into the canonical timestamp.
                     stamp = self.get_clock().now().to_msg()
 
-                    if len(frame.shape) == 3 and frame.shape[2] == 3:
-                        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                    else:
-                        frame_bgr = frame
+                    if s["encoding"] == "jpeg":
+                        # JPEG path: compress at source (small messages, stored as-is)
+                        if len(frame.shape) == 3 and frame.shape[2] == 3:
+                            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                        else:
+                            frame_bgr = frame
 
-                    ret, jpeg_buf = cv2.imencode(
-                        ".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, s["jpeg_q"]]
-                    )
-                    if not ret:
-                        continue
-                    jpeg_bytes = jpeg_buf.tobytes()
+                        ret, jpeg_buf = cv2.imencode(
+                            ".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, s["jpeg_q"]]
+                        )
+                        if not ret:
+                            continue
+                        payload = jpeg_buf.tobytes()
+                        step = len(payload)
+                    else:
+                        # Raw path: original pixels, no compression. The lerobot
+                        # wrapper delivers RGB; mono frames pass through as-is.
+                        payload = frame.tobytes()
+                        step = frame.shape[1] * (frame.shape[2] if frame.ndim == 3 else 1)
 
                     msg = Image()
                     msg.header.stamp = stamp
@@ -280,8 +289,8 @@ class CameraPublisherNode(Node):
                     msg.width = frame.shape[1]
                     msg.encoding = s["encoding"]
                     msg.is_bigendian = 0
-                    msg.step = len(jpeg_bytes)
-                    msg.data = jpeg_bytes
+                    msg.step = step
+                    msg.data = payload
                     s["img_pub"].publish(msg)
 
                     key = s["cam_key"]
@@ -312,6 +321,11 @@ class CameraPublisherNode(Node):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Camera Stream ROS2 Publisher")
     parser.add_argument("--config-dir", default="config", help="Config directory")
+    parser.add_argument(
+        "--jpeg", action="store_true",
+        help="Compress frames to JPEG at the source (default: off — publish raw "
+             "pixels per the config encoding; the HDF5 then stores original data)",
+    )
     args = parser.parse_args()
 
     config_dir = Path(args.config_dir)
@@ -336,7 +350,7 @@ def main() -> None:
 
     print("\n[2/2] Starting ROS2 publisher...")
     rclpy.init(args=sys.argv)
-    node = CameraPublisherNode(cameras, cfg)
+    node = CameraPublisherNode(cameras, cfg, force_jpeg=args.jpeg)
     node.start()
     try:
         rclpy.spin(node)

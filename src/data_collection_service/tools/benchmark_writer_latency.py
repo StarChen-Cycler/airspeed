@@ -111,7 +111,8 @@ def _append(writer: AirsHdf5Writer, adapter, name: str, msg, received_at: dateti
     sample = adapter.adapt(msg, received_at=received_at)
     if sample.image_data is not None:
         writer.append_image(name, sample.image_data, sample.timestamp_ns,
-                            width=sample.width, height=sample.height)
+                            width=sample.width, height=sample.height,
+                            encoding=sample.encoding)
     elif sample.values is not None:
         writer.append_vector(name, sample.values, sample.timestamp_ns)
     return (_time.perf_counter_ns() - t0) / 1e6  # ms

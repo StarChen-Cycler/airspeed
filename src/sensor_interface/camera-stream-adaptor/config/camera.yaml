@@ -13,7 +13,7 @@ cameras:
         width: 640
         height: 480
         fps: 30
-        encoding: "jpeg"     # jpeg (stored as-is) or rgb8 (raw → JPEG re-encoded at writer)
+        encoding: "rgb8"     # rgb8 (raw pixels, stored as-is) or jpeg (compressed at source)
         jpeg_quality: 70
       # depth:
       #   enabled: false      # requires pyrealsense2 direct access (not yet implemented)
@@ -33,7 +33,7 @@ cameras:
         width: 640
         height: 480
         fps: 30
-        encoding: "jpeg"
+        encoding: "rgb8"
         jpeg_quality: 70
 
   left_wrist:
@@ -46,7 +46,7 @@ cameras:
         width: 640
         height: 480
         fps: 30
-        encoding: "jpeg"
+        encoding: "rgb8"
         jpeg_quality: 70
 
 # Max cameras to discover (limits discovery loop)

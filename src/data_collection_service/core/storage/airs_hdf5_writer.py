@@ -174,7 +174,7 @@ class AirsHdf5Writer:
 
     def register_image_stream(
         self, name: str, *, width: int, height: int, channels: int,
-        encoding: str = "jpeg", reencode_to_jpeg: bool = False,
+        encoding: str = "raw",
     ) -> None:
         self._require_open()
         if name in self._streams:
@@ -184,7 +184,10 @@ class AirsHdf5Writer:
         grp.attrs["width"] = width
         grp.attrs["height"] = height
         grp.attrs["channels"] = channels
-        grp.attrs["encoding"] = "jpeg" if reencode_to_jpeg else encoding
+        # Placeholder only — the first frame overrides this with the actual
+        # message encoding. The writer never re-encodes: compression, when
+        # wanted, happens only at the source adaptor.
+        grp.attrs["encoding"] = encoding
         dt = h5py.vlen_dtype(np.dtype("uint8"))
         grp.create_dataset(
             "data", shape=(0,), maxshape=(None,),
@@ -194,7 +197,7 @@ class AirsHdf5Writer:
             "timestamps", shape=(0,), maxshape=(None,),
             dtype=np.uint64, chunks=(_IMAGE_BATCH,),
         )
-        self._streams[name] = _ImageBuffer(name, grp, reencode_to_jpeg)
+        self._streams[name] = _ImageBuffer(name, grp)
 
     # -- append (hot path — buffers in memory, flushes in batches) --
 
@@ -207,11 +210,12 @@ class AirsHdf5Writer:
     def append_image(
         self, name: str, raw_data: bytes, timestamp_ns: int, *,
         width: int | None = None, height: int | None = None,
+        encoding: str | None = None,
     ) -> None:
         buf = self._streams.get(name)
         if not isinstance(buf, _ImageBuffer):
             raise AirsHdf5WriterError(f"{name!r} is not a registered image stream")
-        buf.append(raw_data, timestamp_ns, width=width, height=height)
+        buf.append(raw_data, timestamp_ns, width=width, height=height, encoding=encoding)
 
     # -- helpers --
 
@@ -309,10 +313,9 @@ class _VectorBuffer:
 
 
 class _ImageBuffer:
-    def __init__(self, name: str, grp: h5py.Group, reencode_to_jpeg: bool) -> None:
+    def __init__(self, name: str, grp: h5py.Group) -> None:
         self.name = name
         self._grp = grp
-        self._reencode = reencode_to_jpeg
         self._frame_buf: list[bytes] = []
         self._ts_buf: list[np.uint64] = []
         self._total = 0
@@ -327,12 +330,15 @@ class _ImageBuffer:
     def append(
         self, raw_data: bytes, timestamp_ns: int,
         *, width: int | None = None, height: int | None = None,
+        encoding: str | None = None,
     ) -> None:
-        if self._reencode:
-            raw_data = _reencode_jpeg(raw_data)
         if self._first_ts_ns is None:
             self._first_ts_ns = int(timestamp_ns)
             self._set_dimensions(raw_data, width, height)
+            # Record the actual payload encoding (rgb8, jpeg, …) from the
+            # first frame; bytes are stored verbatim, never re-encoded.
+            if encoding:
+                self._grp.attrs["encoding"] = encoding
         self._last_ts_ns = int(timestamp_ns)
         self._frame_buf.append(raw_data)
         self._ts_buf.append(np.uint64(timestamp_ns))
@@ -393,19 +399,6 @@ def _measured_rate(n_frames: int, first_ts_ns: int | None,
     if duration_s <= 0.0:
         return 0.0
     return (n_frames - 1) / duration_s
-
-
-def _reencode_jpeg(raw: bytes) -> bytes:
-    try:
-        import cv2
-    except ImportError:
-        return raw
-    arr = np.frombuffer(raw, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is None:
-        return raw
-    _, enc = cv2.imencode(".jpg", img)
-    return enc.tobytes()
 
 
 def _jpeg_dimensions(raw: bytes) -> tuple[int, int] | None:

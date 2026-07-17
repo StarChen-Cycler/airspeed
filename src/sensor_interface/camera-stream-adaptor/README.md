@@ -12,11 +12,11 @@ Topics are derived from the config. Default three-camera setup:
 
 | Topic | Type | Content |
 |-------|------|---------|
-| `/camera/right_wrist/image_raw` | `sensor_msgs/Image` | JPEG-encoded, native rate (~30 Hz single / ~15 Hz multi-stream) |
+| `/camera/right_wrist/image_raw` | `sensor_msgs/Image` | Raw rgb8 by default (JPEG with `--jpeg`), native rate (~30 Hz single / ~15 Hz multi-stream) |
 | `/camera/right_wrist/camera_info` | `sensor_msgs/CameraInfo` | Intrinsics (latched, TRANSIENT_LOCAL) |
-| `/camera/head/image_raw` | `sensor_msgs/Image` | JPEG-encoded |
+| `/camera/head/image_raw` | `sensor_msgs/Image` | Raw rgb8 (JPEG with `--jpeg`) |
 | `/camera/head/camera_info` | `sensor_msgs/CameraInfo` | Intrinsics (latched) |
-| `/camera/left_wrist/image_raw` | `sensor_msgs/Image` | JPEG-encoded |
+| `/camera/left_wrist/image_raw` | `sensor_msgs/Image` | Raw rgb8 (JPEG with `--jpeg`) |
 | `/camera/left_wrist/camera_info` | `sensor_msgs/CameraInfo` | Intrinsics (latched) |
 
 CameraInfo is published once at startup with TRANSIENT_LOCAL durability (latched) —
@@ -32,6 +32,9 @@ color conversion and JPEG encoding — recorded timestamps reflect frame return
 cd camera-stream-adaptor
 source /opt/ros/humble/setup.bash
 python3 camera_publisher.py
+
+# Compress at source instead of raw pixels (off by default)
+python3 camera_publisher.py --jpeg
 
 # Custom config path
 python3 camera_publisher.py --config-dir /path/to/config
@@ -57,7 +60,7 @@ cameras:
         width: 640
         height: 480
         fps: 30
-        encoding: "jpeg"
+        encoding: "rgb8"
         jpeg_quality: 70
 
   head:
@@ -70,7 +73,7 @@ cameras:
         width: 640
         height: 480
         fps: 30
-        encoding: "jpeg"
+        encoding: "rgb8"
         jpeg_quality: 70
 
   left_wrist:
@@ -83,7 +86,7 @@ cameras:
         width: 640
         height: 480
         fps: 30
-        encoding: "jpeg"
+        encoding: "rgb8"
         jpeg_quality: 70
 
 max_cameras: 3
@@ -110,7 +113,7 @@ cameras:
         width: 1280
         height: 720
         fps: 30
-        encoding: "jpeg"
+        encoding: "rgb8"
         jpeg_quality: 80
 
 intrinsics:
@@ -129,7 +132,7 @@ intrinsics:
 
 | Stream | Supported | Notes |
 |--------|-----------|-------|
-| `color` | Yes (via lerobot SDK) | RGB frame, JPEG-encoded at source |
+| `color` | Yes (via lerobot SDK) | RGB frame, raw rgb8 by default (JPEG with `--jpeg`) |
 | `depth` | Not yet | Requires pyrealsense2 direct access |
 | `infra_left` | Not yet | Requires pyrealsense2 direct access |
 | `infra_right` | Not yet | Requires pyrealsense2 direct access |
@@ -162,7 +165,7 @@ streams:
     topic: "/camera/right_wrist/image_raw"
     message_type: "sensor_msgs/Image"
     time_domain: ros_header
-    image_encoding: jpeg
+    image_encoding: raw
     qos:
       reliability: best_effort
       durability: volatile
@@ -178,7 +181,7 @@ streams:
     topic: "/camera/head/image_raw"
     message_type: "sensor_msgs/Image"
     time_domain: ros_header
-    image_encoding: jpeg
+    image_encoding: raw
     qos:
       reliability: best_effort
       durability: volatile
@@ -194,7 +197,7 @@ streams:
     topic: "/camera/left_wrist/image_raw"
     message_type: "sensor_msgs/Image"
     time_domain: ros_header
-    image_encoding: jpeg
+    image_encoding: raw
     qos:
       reliability: best_effort
       durability: volatile

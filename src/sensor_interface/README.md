@@ -149,9 +149,10 @@ interpret the byte array:
 | `mono16` | High-depth grayscale | 2 | Raw sensor values, custom range |
 | `8UC3` | Raw color (no color space) | 3 | Avoid — prefer rgb8 or jpeg |
 
-The data collection service stores JPEG-encoded images as-is (zero re-encoding). Other
-encodings are re-encoded to JPEG at the writer unless `image_encoding: raw` is set in
-the session YAML.
+The data collection service stores image bytes exactly as published — it never
+re-encodes. Compression happens only at the source adaptor (`--jpeg` flag, or
+`encoding: "jpeg"` in the adaptor config); declare `image_encoding: jpeg` in the
+session YAML to match, or `raw` (the shipped default) to store original pixels.
 
 ### JPEG Is Recommended for Color
 

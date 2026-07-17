@@ -353,7 +353,7 @@ streams:
       depth: 5
     time_domain: ros_header
     frame_id: camera_left_wrist_optical_frame
-    image_encoding: jpeg
+    image_encoding: raw
     fields:
       - path: data
         type: bytes
@@ -370,7 +370,7 @@ streams:
       depth: 5
     time_domain: ros_header
     frame_id: camera_right_wrist_optical_frame
-    image_encoding: jpeg
+    image_encoding: raw
     fields:
       - path: data
         type: bytes
@@ -387,7 +387,7 @@ streams:
       depth: 5
     time_domain: ros_header
     frame_id: camera_head_optical_frame
-    image_encoding: jpeg
+    image_encoding: raw
     fields:
       - path: data
         type: bytes

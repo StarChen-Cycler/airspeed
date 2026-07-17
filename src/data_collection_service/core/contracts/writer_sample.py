@@ -23,6 +23,7 @@ class WriterSample:
     image_data: bytes | None = None            # for image streams
     width: int | None = None                   # image width from message metadata
     height: int | None = None                  # image height from message metadata
+    encoding: str | None = None                # image pixel encoding (rgb8, jpeg, …)
 
 
 __all__ = ["WriterSample"]

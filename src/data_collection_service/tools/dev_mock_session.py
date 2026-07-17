@@ -143,6 +143,7 @@ def _run_record(config, adapters, rate_hz, interval_s, args):
                     writer.append_image(
                         name, result.image_data, result.timestamp_ns,
                         width=result.width, height=result.height,
+                        encoding=result.encoding,
                     )
                 elif result.values is not None:
                     writer.append_vector(name, result.values, result.timestamp_ns)

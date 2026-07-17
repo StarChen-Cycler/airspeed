@@ -180,6 +180,7 @@ class PlatformCollectionNode(Node):
                 self._writer.append_image(
                     stream_name, sample.image_data, sample.timestamp_ns,
                     width=sample.width, height=sample.height,
+                    encoding=sample.encoding,
                 )
             elif sample.values is not None:
                 self._writer.append_vector(stream_name, sample.values, sample.timestamp_ns)

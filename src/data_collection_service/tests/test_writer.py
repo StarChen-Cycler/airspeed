@@ -161,3 +161,17 @@ def test_zero_frame_streams_are_pruned_at_close(tmp_path):
         assert "dead_vec" not in f
         assert "dead_img" not in f
         assert f.attrs["frames"] == 1
+
+
+def test_raw_image_stream_stores_bytes_verbatim_with_message_encoding(tmp_path):
+    writer = AirsHdf5Writer(tmp_path)
+    writer.open_episode("ep")
+    writer.register_image_stream("cam", width=0, height=0, channels=3, encoding="raw")
+    raw = bytes(i % 256 for i in range(3 * 2 * 3))
+    writer.append_image("cam", raw, 1, width=3, height=2, encoding="rgb8")
+    path = writer.close_episode(task_completed=True, termination_reason="goal_reached")
+    with h5py.File(path, "r") as f:
+        assert f["cam"].attrs["encoding"] == "rgb8"
+        assert bytes(f["cam"]["data"][0]) == raw
+        assert f["cam"].attrs["width"] == 3
+        assert f["cam"].attrs["height"] == 2

@@ -141,7 +141,7 @@ Each binding: `stream_name` (required), `button_index` (int ≥ 0), `threshold`
 | `qos.depth` | int ≥ 1 | no | Default 10; use 1–5 for high-rate streams |
 | `expected_rate_hz` | float | no | Used by mock publishers and rate monitoring |
 | `frame_id` | string | no | Fallback `frame_id` for payload extraction |
-| `image_encoding` | `jpeg` / `raw` | Image streams only | `jpeg` = re-encode to JPEG at write; `raw` = store bytes as-is. Rejected on non-Image streams |
+| `image_encoding` | `jpeg` / `raw` | Image streams only | Declares the payload encoding the source adaptor sends: `jpeg` = compressed at source, `raw` = original pixels (shipped default). Storage is always verbatim — the collector never re-encodes. Rejected on non-Image streams |
 | `fields` | list of field rules | yes | Declarative payload contract (see 3.4) |
 | `columns` | list of unique strings | required for sequence streams | Per-dimension labels → HDF5 `columns` attr → LeRobot feature names |
 | `notes` | string | no | Free text |
@@ -239,7 +239,8 @@ device without a managed clock.
 
 ### Either pattern — bandwidth & QoS
 
-- Images: publish JPEG (`encoding: jpeg`) — ~200 KB vs ~900 KB per 640×480 frame.
+- Images: enable source JPEG compression (`--jpeg` on the camera adaptor, or
+  `encoding: "jpeg"` in its config) — ~200 KB vs ~900 KB per 640×480 frame.
 - `best_effort`, `keep_last`, small `depth` (1–5): a dropped frame beats a
   delayed one; latency shows up nowhere in the data because stamps are
   creation-time.
