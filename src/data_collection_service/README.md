@@ -352,6 +352,12 @@ episode-T4-20260617T120000000000Z.h5
 Task folders contain a `task_meta.json` with `task_name`, `target_episodes`, and
 `created_at`. The `.trash/` subfolder holds episodes discarded via the delete action.
 
+Streams that produce no samples during an episode are omitted from the file at
+close — a zero-frame stream leaves no HDF5 group behind (zero-length datasets
+fail dataset validation and cannot be displayed by HDF viewers). Stream absence
+is a runtime condition, visible in the dashboard's stream health panel, not in
+the episode file.
+
 ## Project Structure
 
 ```

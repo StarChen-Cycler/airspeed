@@ -88,9 +88,20 @@ class AirsHdf5Writer:
         if self._file is None:
             raise AirsHdf5WriterError("no episode is open")
         total_frames = 0
-        for buf in self._streams.values():
+        empty_streams = []
+        for name, buf in self._streams.items():
             buf.flush_remaining()
             total_frames = max(total_frames, buf.frame_count)
+            if buf.frame_count == 0:
+                empty_streams.append(name)
+        # Streams that produced no samples are omitted from the file: a
+        # zero-length dataset fails dataset validation and cannot be
+        # displayed by HDF viewers. A never-fed vector stream may not even
+        # have a 'data' dataset (dims are detected at first sample). Stream
+        # absence remains observable at runtime via the stream tracker.
+        for name in empty_streams:
+            del self._file[name]
+            del self._streams[name]
         self._file.attrs["description"] = self._description
         self._file.attrs["robot_type"] = self._robot_type
         self._file.attrs["series_number"] = self._series_number

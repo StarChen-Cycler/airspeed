@@ -143,3 +143,21 @@ def test_measured_rate_edge_cases():
 def test_jpeg_dimensions_parse():
     data = _make_valid_jpeg(7, 5)
     assert _jpeg_dimensions(data) == (7, 5)
+
+
+def test_zero_frame_streams_are_pruned_at_close(tmp_path):
+    writer = AirsHdf5Writer(tmp_path)
+    writer.open_episode("ep")
+    writer.register_vector_stream("live", dims=1, columns=("a",))
+    writer.register_vector_stream("dead_vec", dims=0, columns=("b",))
+    writer.register_image_stream("dead_img", width=0, height=0, channels=3)
+    writer.append_vector("live", [1.0], 1)
+    path = writer.close_episode(task_completed=True, termination_reason="goal_reached")
+    with h5py.File(path, "r") as f:
+        assert "live" in f
+        assert f["live"]["data"].shape == (1, 1)
+        assert json.loads(f["live"].attrs["columns"]) == ["a"]
+        # Zero-frame streams leave no groups behind — no zero-length datasets
+        assert "dead_vec" not in f
+        assert "dead_img" not in f
+        assert f.attrs["frames"] == 1
