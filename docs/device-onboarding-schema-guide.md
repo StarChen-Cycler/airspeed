@@ -207,7 +207,10 @@ Add a test in `tests/test_adapter_registry.py` mirroring
 ## 5. Remote & Long-Distance Devices
 
 ROS2/DDS is the **local** data bus — it does not cross firewalls or subnets
-reliably. For a device on a remote server (long-distance teleoperation, remote
+reliably. The system assumes the local network is *not* the bottleneck and
+optimizes for **package overhead** instead: choose libraries whose Python path
+passes raw bytes cheaply (measured: rclpy ~130 ms per 1 MB image vs ZeroMQ/Zenoh
+~0.9 ms). For a device on a remote server (long-distance teleoperation, remote
 data collection), pick one of two patterns:
 
 ### Pattern A — Relay bridge (message forwarding)
