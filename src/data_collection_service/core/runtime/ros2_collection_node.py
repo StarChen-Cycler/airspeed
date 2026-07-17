@@ -137,6 +137,7 @@ class PlatformCollectionNode(Node):
         self._adapter_registry = AdapterRegistry.with_defaults()
         self._adapters = self._adapter_registry.resolve_session(self._config)
 
+        self._zenoh_channel = None
         self._create_subscriptions()
         self._create_services()
         self._start_manual_ui(operator_ui_host, operator_ui_port)
@@ -150,6 +151,8 @@ class PlatformCollectionNode(Node):
 
     def _create_subscriptions(self) -> None:
         for name, stream in self._config.streams:
+            if stream.transport == "zenoh":
+                continue  # handled by the zenoh side channel, not ROS2
             msg_cls = _resolve_message_class(stream.message_type)
             if msg_cls is None:
                 self.get_logger().warn(f"skipping {name}: cannot resolve {stream.message_type}")
@@ -157,6 +160,16 @@ class PlatformCollectionNode(Node):
             qos = _qos_profile_from_stream(stream)
             self.create_subscription(msg_cls, stream.topic, self._make_handler(name), qos)
             self.get_logger().info(f"  {name} → {stream.topic}")
+
+        zenoh_streams = [
+            (name, stream.topic.lstrip("/"), stream.message_type)
+            for name, stream in self._config.streams
+            if stream.transport == "zenoh"
+        ]
+        if zenoh_streams:
+            from core.runtime.zenoh_side_channel import ZenohSideChannel
+            self._zenoh_channel = ZenohSideChannel()
+            self._zenoh_channel.start(zenoh_streams, self._handle_message)
 
     def _make_handler(self, stream_name: str):
         def handler(msg):
@@ -257,6 +270,8 @@ class PlatformCollectionNode(Node):
     # -- helpers --
 
     def shutdown(self) -> None:
+        if self._zenoh_channel is not None:
+            self._zenoh_channel.stop()
         if self._state_machine.is_recording:
             self._state_machine.abort_episode()
         if hasattr(self, "_ui"):

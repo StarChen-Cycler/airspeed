@@ -128,6 +128,7 @@ class StreamConfig:
     message_type: str
     qos: StreamQoS = field(default_factory=StreamQoS)
     time_domain: TimeDomain = TimeDomain.ROS_HEADER
+    transport: str = "ros2"
     expected_rate_hz: float | None = None
     frame_id: str | None = None
     image_encoding: ImageEncoding | None = None
@@ -136,6 +137,7 @@ class StreamConfig:
     notes: str | None = None
 
     _ALLOWED_SOURCES = frozenset({"teleop", "robot", "sensor"})
+    _ALLOWED_TRANSPORTS = frozenset({"ros2", "zenoh"})
     _IMAGE_MESSAGE_TYPE = "sensor_msgs/Image"
 
     def __post_init__(self) -> None:
@@ -146,6 +148,11 @@ class StreamConfig:
             raise SessionConfigError(
                 f"StreamConfig.source must be one of {sorted(self._ALLOWED_SOURCES)}; "
                 f"got {self.source!r}"
+            )
+        if self.transport not in self._ALLOWED_TRANSPORTS:
+            raise SessionConfigError(
+                f"StreamConfig.transport must be one of "
+                f"{sorted(self._ALLOWED_TRANSPORTS)}; got {self.transport!r}"
             )
         if not isinstance(self.qos, StreamQoS):
             raise SessionConfigError("StreamConfig.qos must be a StreamQoS")
@@ -186,6 +193,8 @@ class StreamConfig:
             payload["frame_id"] = self.frame_id
         if self.image_encoding is not None:
             payload["image_encoding"] = self.image_encoding.value
+        if self.transport != "ros2":
+            payload["transport"] = self.transport
         if self.fields:
             payload["fields"] = [f.to_dict() for f in self.fields]
         if self.columns:
@@ -357,7 +366,7 @@ class SessionConfig:
 
     _ROOT_KEYS = frozenset({"schema_version", "session", "storage", "streams"})
     _STREAM_KEYS = frozenset({
-        "source", "topic", "message_type", "qos", "time_domain",
+        "source", "topic", "message_type", "qos", "time_domain", "transport",
         "expected_rate_hz", "frame_id", "image_encoding", "fields", "columns", "notes",
     })
     _SESSION_KEYS = frozenset({
@@ -600,6 +609,13 @@ def _parse_stream(name: str, raw: Any) -> StreamConfig:
                 f"{[e.value for e in ImageEncoding]}; got {ie_str!r}"
             )
 
+    transport = str(raw.get("transport", "ros2"))
+    if transport not in StreamConfig._ALLOWED_TRANSPORTS:
+        raise SessionConfigError(
+            f"streams.{name}.transport must be one of "
+            f"{sorted(StreamConfig._ALLOWED_TRANSPORTS)}; got {transport!r}"
+        )
+
     fields_raw = raw.get("fields")
     fields: list[FieldRule] = []
     if fields_raw is not None:
@@ -643,6 +659,7 @@ def _parse_stream(name: str, raw: Any) -> StreamConfig:
         message_type=_require_str(raw, "message_type", scope=f"streams.{name}"),
         qos=qos,
         time_domain=time_domain,
+        transport=transport,
         expected_rate_hz=expected_rate_hz,
         frame_id=_optional_str(raw, "frame_id"),
         image_encoding=image_encoding,

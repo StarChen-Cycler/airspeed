@@ -354,6 +354,7 @@ streams:
     time_domain: ros_header
     frame_id: camera_left_wrist_optical_frame
     image_encoding: raw
+    transport: zenoh
     fields:
       - path: data
         type: bytes
@@ -371,6 +372,7 @@ streams:
     time_domain: ros_header
     frame_id: camera_right_wrist_optical_frame
     image_encoding: raw
+    transport: zenoh
     fields:
       - path: data
         type: bytes
@@ -388,6 +390,7 @@ streams:
     time_domain: ros_header
     frame_id: camera_head_optical_frame
     image_encoding: raw
+    transport: zenoh
     fields:
       - path: data
         type: bytes

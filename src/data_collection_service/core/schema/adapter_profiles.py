@@ -249,6 +249,11 @@ def _default_profiles_by_name() -> dict[str, AdapterPayloadProfile]:
                 AdapterPayloadFieldRule("data", numeric=True, min_items=1, min_value=0, max_value=255),
             ),
         ),
+        AdapterPayloadProfile(
+            name="sensor_joy", source_family="sensor",
+            description="Float32 array payload from high-bandwidth sensor streams (e.g. tactile).",
+            field_rules=(AdapterPayloadFieldRule("axes", numeric=True, min_items=1),),
+        ),
     )
     return {p.name: p for p in profiles}
 

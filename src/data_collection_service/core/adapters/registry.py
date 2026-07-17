@@ -167,6 +167,7 @@ def _default_bindings() -> tuple[AdapterBinding, ...]:
         AdapterBinding("robot", "sensor_msgs/JointState", "robot_joint_state", "robot_joint_positions", _joint_state_payload),
         AdapterBinding("robot", "geometry_msgs/PoseStamped", "robot_pose", "robot_pose", _pose_payload),
         AdapterBinding("sensor", "sensor_msgs/Image", "sensor_rgb_image", "sensor_rgb_image", _image_payload),
+        AdapterBinding("sensor", "sensor_msgs/Joy", "sensor_joy_array", "sensor_joy", _sensor_joy_payload),
     )
 
 
@@ -176,6 +177,11 @@ def _pose_payload(msg: Any, stream: StreamConfig) -> dict[str, Any]:
 
 def _joy_payload(msg: Any, _: StreamConfig) -> dict[str, Any]:
     return {"buttons": extract_numeric_sequence(msg, field_name="axes")}
+
+
+def _sensor_joy_payload(msg: Any, _: StreamConfig) -> dict[str, Any]:
+    """Tactile/array payloads from sensor-side Joy streams (e.g. zenoh channel)."""
+    return {"axes": extract_numeric_sequence(msg, field_name="axes")}
 
 
 def _joint_state_payload(msg: Any, _: StreamConfig) -> dict[str, Any]:
