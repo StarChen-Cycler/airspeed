@@ -10,7 +10,7 @@ from core.adapters import AdapterError, AdapterRegistry
 from core.config import load_session_config_dict
 
 
-def _make_config(*, drop_pose_columns: bool = False, drop_button_columns: bool = False, joy_buttons: bool = False):
+def _make_config(*, drop_pose_columns: bool = False, drop_button_columns: bool = False):
     streams = {
         "vr_head_pose": {
             "source": "teleop",
@@ -31,10 +31,10 @@ def _make_config(*, drop_pose_columns: bool = False, drop_button_columns: bool =
         "vr_left_buttons": {
             "source": "teleop",
             "topic": "/vr/left_buttons",
-            "message_type": "sensor_msgs/Joy" if joy_buttons else "std_msgs/Float32MultiArray",
+            "message_type": "sensor_msgs/Joy",
             "columns": (["vr_l_trigger", "vr_l_grip"] if not drop_button_columns else None),
-            "time_domain": "ros_header" if joy_buttons else "ros_receive",
-            "fields": [{"path": "axes" if joy_buttons else "data", "type": "sequence"}],
+            "time_domain": "ros_header",
+            "fields": [{"path": "axes", "type": "sequence"}],
         },
         "camera_left_wrist": {
             "source": "sensor",
@@ -81,7 +81,7 @@ def test_sequence_stream_without_columns_fails():
 
 
 def test_joy_buttons_binding_reads_axes_with_header_time():
-    cfg = _make_config(joy_buttons=True)
+    cfg = _make_config()
     adapters = AdapterRegistry.with_defaults().resolve_session(cfg)
     adapter = adapters["vr_left_buttons"]
     assert adapter.effective_columns() == ("vr_l_trigger", "vr_l_grip")

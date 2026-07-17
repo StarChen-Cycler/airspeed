@@ -186,9 +186,10 @@ msg.header.stamp = robot.get_state_timestamp()
 msg.header.stamp = self.get_clock().now().to_msg()
 ```
 
-If your robot SDK does not expose acquisition timestamps, set `time_domain: ros_receive`
-in the session YAML for that stream. The collector will use the message arrival time as
-a fallback. This is less accurate but workable.
+If your robot SDK does not expose acquisition timestamps, stamp with the host clock
+immediately after the state read in your adaptor — that is the creation-time stamp.
+Header-less messages are rejected at the collector: there is no `ros_receive`
+fallback, so every stream must carry a header.
 
 The bundled OpenArm adaptors stamp at creation time so `ros_header` stays meaningful
 end to end: `arm_state_publisher` stamps right after the CAN-bus read (≈ encoder sample

@@ -35,10 +35,6 @@ def make_pose_message(
     )
 
 
-def make_array_message(values: object) -> SimpleNamespace:
-    return SimpleNamespace(data=values)
-
-
 def make_joy_message(
     values: object, timestamp: datetime, *, frame_id: str = "",
 ) -> SimpleNamespace:
@@ -98,11 +94,6 @@ def make_message_for_stream(
                                      orientation=(0.0, 0.0, 0.7, 0.7))
         return make_pose_message(timestamp, frame_id=frame_id)
 
-    if msg_type == "std_msgs/Float32MultiArray":
-        if "button" in stream_name:
-            return make_array_message([1.0, 0.0, 0.0, 0.0, 0.0, 0.5])
-        return make_array_message([0.0, 0.1, 0.2])
-
     if msg_type == "sensor_msgs/Joy":
         return make_joy_message([1.0, 0.0, 0.0, 0.0, 0.0, 0.5], timestamp, frame_id=frame_id)
 
@@ -154,6 +145,7 @@ _MINIMAL_JPEG = bytes([
 ])
 
 __all__ = [
-    "make_array_message", "make_header", "make_image_message",
-    "make_joint_state_message", "make_message_for_stream", "make_pose_message",
+    "make_header", "make_image_message",
+    "make_joint_state_message", "make_joy_message", "make_message_for_stream",
+    "make_pose_message",
 ]

@@ -249,11 +249,6 @@ def _default_profiles_by_name() -> dict[str, AdapterPayloadProfile]:
                 AdapterPayloadFieldRule("data", numeric=True, min_items=1, min_value=0, max_value=255),
             ),
         ),
-        AdapterPayloadProfile(
-            name="sensor_array", source_family="sensor",
-            description="Generic numeric array payload from sensor adapters (tactile, IMU, etc.).",
-            field_rules=(AdapterPayloadFieldRule("data", numeric=True, min_items=1),),
-        ),
     )
     return {p.name: p for p in profiles}
 

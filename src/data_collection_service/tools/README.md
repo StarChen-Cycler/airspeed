@@ -7,7 +7,7 @@ All tools in this directory resolve paths from the project root via `__file__`, 
 ## Data Generation (Dev / Testing)
 
 ### `dev_mock_messages.py`
-Shared mock message factories for offline development. Builds synthetic ROS2-message-shaped objects (`PoseStamped`, `JointState`, `Image`, `Joy`, `Float32MultiArray`) without requiring live ROS2 topics, hardware, or `rclpy`. Used by both `dev_mock_session.py` and the test suite.
+Shared mock message factories for offline development. Builds synthetic ROS2-message-shaped objects (`PoseStamped`, `JointState`, `Image`, `Joy`) without requiring live ROS2 topics, hardware, or `rclpy`. Used by both `dev_mock_session.py` and the test suite.
 
 ```bash
 # Not run directly — imported as a library

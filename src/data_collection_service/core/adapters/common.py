@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from core.config import StreamConfig, TimeDomain
+from core.config import StreamConfig
 from core.contracts import (
     AdapterBoundarySample,
     CanonicalStreamIdentity,
@@ -21,9 +21,12 @@ def build_boundary_sample(
     stream: StreamConfig, *, payload: Mapping[str, Any],
     received_at: datetime, source_timestamp: datetime | None,
 ) -> AdapterBoundarySample:
-    if stream.time_domain == TimeDomain.ROS_HEADER and source_timestamp is None:
-        raise AdapterError(f"{stream.name} requires header timestamp for ros_header")
-    timestamp = source_timestamp if stream.time_domain == TimeDomain.ROS_HEADER else received_at
+    # Strict contract: every stream's canonical time is the creation-time
+    # header stamp. Header-less messages are rejected — route such devices
+    # through an edge shim adaptor that stamps at receipt.
+    if source_timestamp is None:
+        raise AdapterError(f"{stream.name} requires a header timestamp (ros_header-only contract)")
+    timestamp = source_timestamp
     try:
         return AdapterBoundarySample(
             stream=CanonicalStreamIdentity(stream.name, stream.source),

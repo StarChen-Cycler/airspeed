@@ -40,14 +40,14 @@ message itself.
 | Discrete inputs (buttons, triggers, pedals) | `sensor_msgs/Joy` | teleop | Header + `axes` for analog channels |
 | Camera frame | `sensor_msgs/Image` | sensor | Header + encoding + bytes |
 | Camera intrinsics | `sensor_msgs/CameraInfo` | sensor | Latched (TRANSIENT_LOCAL), once per camera |
-| Generic numeric array | `std_msgs/Float32MultiArray` | any | **Header-less — last resort only** |
 
 Rules:
 
-1. **Prefer types with a `std_msgs/Header`.** `JointState` for joint data, `Joy`
-   for discrete inputs, `PoseStamped` for poses. `Float32MultiArray` has no
-   header and cannot carry a creation timestamp — it remains supported for
-   legacy devices but forces `time_domain: ros_receive` (arrival time).
+1. **Only types with a `std_msgs/Header` are accepted.** `JointState` for joint
+   data, `Joy` for discrete inputs, `PoseStamped` for poses. Header-less types
+   (`Float32MultiArray` and friends) are rejected at the adapter boundary. If
+   your device SDK only produces header-less data, write an edge shim adaptor
+   that stamps at receipt and republishes a canonical type — see §5 Pattern B.
 2. **Analog-capable channels go in `Joy.axes`** (float32). `Joy.buttons` is
    int32 on/off; truncating analog triggers there loses resolution. The bundled
    VR bridge puts all 6 controller channels in `axes` and leaves `buttons` empty.
@@ -134,7 +134,7 @@ Each binding: `stream_name` (required), `button_index` (int ≥ 0), `threshold`
 | `source` | `teleop` / `robot` / `sensor` | yes | Selects the adapter binding family |
 | `topic` | string | yes | ROS2 topic to subscribe |
 | `message_type` | string | yes | e.g. `sensor_msgs/Joy` — resolved dynamically; must match a binding `(source, message_type)` |
-| `time_domain` | `ros_header` / `ros_receive` / `system_clock` / `steady_clock` | no (default `ros_receive`) | Use `ros_header` for anything with a header. `system_clock`/`steady_clock` currently behave as `ros_receive` |
+| `time_domain` | `ros_header` only | no (default `ros_header`) | Strict contract — every stream uses the creation-time header stamp; any other value fails session load |
 | `qos.reliability` | `best_effort` / `reliable` | no | Default `best_effort` |
 | `qos.durability` | `volatile` / `transient_local` | no | Default `volatile` |
 | `qos.history` | `keep_last` / `keep_all` | no | Default `keep_last` |
@@ -183,9 +183,9 @@ Current bindings:
 
 | Source | Message types |
 |--------|---------------|
-| teleop | `PoseStamped`, `Joy`, `Float32MultiArray` |
-| robot | `JointState`, `PoseStamped`, `Float32MultiArray` |
-| sensor | `Image`, `Float32MultiArray` |
+| teleop | `PoseStamped`, `Joy` |
+| robot | `JointState`, `PoseStamped` |
+| sensor | `Image` |
 
 To add one (three small pieces, no pipeline changes):
 
@@ -230,11 +230,12 @@ Before recording:
 ### Pattern B — Interface-at-the-edge (re-stamping)
 
 Run a thin adaptor on the **collector-side** of the slow link that receives the
-remote feed (WebSocket/HTTP) and republishes locally, stamping at receipt —
-exactly how the VR bridge treats the headset. No clock sync needed (one clock
-domain), at the cost of including remote transport latency in the stamp. This
-is the right default for long-distance teleoperation where the remote side is a
-browser or lightweight device without a managed clock.
+remote feed (WebSocket/HTTP) and republishes locally as a canonical
+header-carrying type, stamping at receipt — exactly how the VR bridge treats
+the headset. No clock sync needed (one clock domain), at the cost of including
+remote transport latency in the stamp. This is the right default for
+long-distance teleoperation where the remote side is a browser or lightweight
+device without a managed clock.
 
 ### Either pattern — bandwidth & QoS
 

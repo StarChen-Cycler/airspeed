@@ -122,7 +122,7 @@ each message type required handwritten callback code with hardcoded field names:
 ```python
 # Old way — new message type = new callback
 def _joint_angles_callback(self, msg):
-    data = list(msg.data)  # only works for Float32MultiArray
+    data = list(msg.data)  # hardcoded field path — breaks for any other message type
 ```
 
 The new adapter is generic — it reads the YAML `fields` list and walks the message
@@ -252,7 +252,6 @@ streams:
 |-------------|--------|
 | `geometry_msgs/PoseStamped` | Vector: position(xyz) + orientation(xyzw) = 7 dims |
 | `sensor_msgs/JointState` | Vector: position + velocity + effort |
-| `std_msgs/Float32MultiArray` | Vector: data(N) |
 | `sensor_msgs/Joy` | Vector: axes(N) — discrete/button streams with `header.stamp` |
 | `sensor_msgs/Image` | Image: raw bytes or JPEG |
 | `sensor_msgs/PointCloud2` | Vector: flattened points |

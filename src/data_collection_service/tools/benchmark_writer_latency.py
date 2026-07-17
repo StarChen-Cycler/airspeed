@@ -61,8 +61,18 @@ def _make_message(stream_name: str, stream, *, timestamp: datetime):
                 orientation=SimpleNamespace(x=0.0, y=0.1, z=0.2, w=0.9),
             ),
         )
-    if msg_type == "std_msgs/Float32MultiArray":
-        return SimpleNamespace(data=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    if msg_type == "sensor_msgs/Joy":
+        return SimpleNamespace(
+            header=SimpleNamespace(
+                stamp=SimpleNamespace(
+                    sec=int(timestamp.timestamp()),
+                    nanosec=int((timestamp.timestamp() % 1) * 1e9),
+                ),
+                frame_id="",
+            ),
+            axes=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            buttons=[],
+        )
     if msg_type == "sensor_msgs/JointState":
         return SimpleNamespace(
             header=SimpleNamespace(

@@ -195,8 +195,10 @@ msg.header.stamp = frame.get_timestamp()
 msg.header.stamp = self.get_clock().now().to_msg()
 ```
 
-If your sensor SDK does not expose hardware timestamps, set `time_domain: ros_receive`
-in the session YAML for that stream.
+If your sensor SDK does not expose hardware timestamps, stamp with the host clock
+immediately after the frame read in your adaptor (before any encoding) — that is
+the creation-time stamp. Header-less messages are rejected at the collector, so
+do not publish header-less types such as `Float32MultiArray`.
 
 The bundled camera-stream-adaptor stamps each frame immediately after `cam.read()`
 returns — before color conversion and JPEG encoding — because the RealSense wrapper

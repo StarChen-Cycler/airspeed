@@ -25,10 +25,15 @@ class SessionConfigError(ValueError):
 
 
 class TimeDomain(str, Enum):
+    """Canonical timestamp source — strict contract: header stamps only.
+
+    Header-less time domains (ros_receive, system_clock, steady_clock) were
+    removed: every canonical message type carries a std_msgs/Header with a
+    creation-time stamp. Devices with header-less output must go through an
+    edge shim adaptor that stamps at receipt and republishes a canonical type.
+    """
+
     ROS_HEADER = "ros_header"
-    ROS_RECEIVE = "ros_receive"
-    SYSTEM_CLOCK = "system_clock"
-    STEADY_CLOCK = "steady_clock"
 
 
 class QoSReliability(str, Enum):
@@ -122,7 +127,7 @@ class StreamConfig:
     topic: str
     message_type: str
     qos: StreamQoS = field(default_factory=StreamQoS)
-    time_domain: TimeDomain = TimeDomain.ROS_RECEIVE
+    time_domain: TimeDomain = TimeDomain.ROS_HEADER
     expected_rate_hz: float | None = None
     frame_id: str | None = None
     image_encoding: ImageEncoding | None = None
@@ -575,7 +580,7 @@ def _parse_stream(name: str, raw: Any) -> StreamConfig:
     if qos_raw is not None:
         qos = _parse_qos(qos_raw)
 
-    td_str = str(raw.get("time_domain", "ros_receive"))
+    td_str = str(raw.get("time_domain", "ros_header"))
     try:
         time_domain = TimeDomain(td_str)
     except ValueError:

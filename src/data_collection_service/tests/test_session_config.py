@@ -80,9 +80,9 @@ def test_abort_binding_allowed():
             "b": {
                 "source": "teleop",
                 "topic": "/b",
-                "message_type": "std_msgs/Float32MultiArray",
+                "message_type": "sensor_msgs/Joy",
                 "columns": ["x"],
-                "fields": [{"path": "data", "type": "sequence"}],
+                "fields": [{"path": "axes", "type": "sequence"}],
             },
         },
     })

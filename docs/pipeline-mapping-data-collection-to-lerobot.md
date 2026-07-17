@@ -5,7 +5,7 @@ Date: 2026-07-14
 Full pipeline:
 
 ```
-ROS2 topic message (sensor_msgs/Image, geometry_msgs/PoseStamped, sensor_msgs/JointState, sensor_msgs/Joy, std_msgs/Float32MultiArray)
+ROS2 topic message (sensor_msgs/Image, geometry_msgs/PoseStamped, sensor_msgs/JointState, sensor_msgs/Joy)
   → adapter payload extraction
   → adapter boundary sample
   → profile validation
@@ -212,11 +212,11 @@ def build_boundary_sample(
 
 **latex**: N/A (structural)
 
-**explanation**: The boundary sample is the canonical envelope every ingress path must cross. It carries the stream identity, the chosen timestamp (`ros_header` vs `ros_receive`), and the payload. The source of truth is the stream's `time_domain` declared in the session YAML.
+**explanation**: The boundary sample is the canonical envelope every ingress path must cross. It carries the stream identity, the canonical timestamp (strict `ros_header` contract — the creation-time header stamp), and the payload. The source of truth is the stream's `time_domain` declared in the session YAML, and only `ros_header` is accepted.
 
 ### what it does
 
-Selects the timestamp according to the stream's `time_domain`. For `ros_header` streams it uses the header stamp — this covers every stream in the shipped session config, including button streams (now `sensor_msgs/Joy`, which carries a header). `ros_receive` remains as a fallback for header-less message types, using the local receive time. Then it wraps payload, identity, and timestamp into a frozen dataclass.
+Selects the timestamp according to the stream's `time_domain` — strict contract: only `ros_header` is valid, so every stream uses the creation-time header stamp. A message without a header stamp is rejected with an AdapterError. Then it wraps payload, identity, and timestamp into a frozen dataclass.
 
 ### output example with emphasis
 

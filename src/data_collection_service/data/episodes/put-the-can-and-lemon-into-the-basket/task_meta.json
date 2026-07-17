@@ -1,0 +1,9 @@
+{
+  "task_name": "put-the-can-and-lemon-into-the-basket",
+  "task_prompt": "put the can and lemon into the basket",
+  "task_id": "efc7faab5111",
+  "task_structure": "composite_multistage",
+  "deformable_objects": false,
+  "target_episodes": 100,
+  "created_at": "2026-07-15T07:19:44.470995+00:00"
+}

@@ -17,12 +17,11 @@ try:
         DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
     )
     from sensor_msgs.msg import Image as RosImage, JointState
-    from std_msgs.msg import Float32MultiArray
     from std_srvs.srv import SetBool, Trigger
 except ImportError:
     rclpy = None
     Node = object
-    PoseStamped, RosImage, Float32MultiArray = object, object, object
+    PoseStamped, RosImage = object, object
     Trigger, SetBool = object, object
     QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy = object, object, object, object
 

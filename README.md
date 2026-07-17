@@ -250,8 +250,9 @@ Your publishers MUST follow these rules:
    not the time the message happened to be published
 2. One logical signal per topic — don't multiplex
 3. Use semantic namespaces (`/arm/left/joint_states`)
-4. Prefer `JointState` over `Float32MultiArray` for joint data, and `Joy` for
-   discrete inputs — both carry a header, so every stream can use `ros_header`
+4. Use `JointState` for joint data and `Joy` for discrete inputs — header-less
+   types (e.g. `Float32MultiArray`) are rejected: every stream must use
+   `ros_header` with a creation-time stamp
 
 Full conventions are documented in each interface's README.
 

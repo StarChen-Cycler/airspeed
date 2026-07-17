@@ -28,10 +28,12 @@ class CanonicalStreamFamily(str, Enum):
 
 
 class CanonicalTimeDomain(str, Enum):
+    """Strict contract: every stream's canonical time is the header stamp.
+
+    Header-less time domains were removed — every canonical message type
+    carries a std_msgs/Header with a creation-time stamp.
+    """
     ROS_HEADER = "ros_header"
-    ROS_RECEIVE = "ros_receive"
-    SYSTEM_CLOCK = "system_clock"
-    STEADY_CLOCK = "steady_clock"
 
 
 _ALLOWED_FAMILIES = frozenset(f.value for f in CanonicalStreamFamily)
