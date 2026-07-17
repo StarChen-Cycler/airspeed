@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import threading
 import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -138,6 +139,7 @@ class PlatformCollectionNode(Node):
         self._adapters = self._adapter_registry.resolve_session(self._config)
 
         self._latest_frames: dict = {}
+        self._frames_lock = threading.Lock()
         self._zenoh_channel = None
         self._create_subscriptions()
         self._create_services()
@@ -190,10 +192,11 @@ class PlatformCollectionNode(Node):
             self._stream_tracker.record_valid(stream_name, sample.timestamp_ns)
             if sample.image_data is not None:
                 # Cache latest frame for the dashboard preview (any state).
-                self._latest_frames[stream_name] = (
-                    sample.image_data, sample.encoding, sample.width,
-                    sample.height, sample.timestamp_ns,
-                )
+                with self._frames_lock:
+                    self._latest_frames[stream_name] = (
+                        sample.image_data, sample.encoding, sample.width,
+                        sample.height, sample.timestamp_ns,
+                    )
             if not self._state_machine.is_recording:
                 return
             if sample.image_data is not None:
@@ -279,6 +282,7 @@ class PlatformCollectionNode(Node):
                 logger=self.get_logger().info,
                 image_streams=image_streams,
                 latest_frames=self._latest_frames,
+                frames_lock=self._frames_lock,
             )
             self._ui.start()
             self.get_logger().info(f"manual UI at http://{host}:{port}")

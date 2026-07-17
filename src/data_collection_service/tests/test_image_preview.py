@@ -6,6 +6,7 @@ import io
 import pytest
 
 from core.runtime.manual_operator_ui import (
+    ManualOperatorUI,
     _encode_preview_jpeg,
     build_image_stream_info,
 )
@@ -59,3 +60,26 @@ def test_build_image_stream_info():
     old = info[1]
     assert old["cached"] is False
     assert old["status"] == "absent"
+
+
+def _ui() -> ManualOperatorUI:
+    return ManualOperatorUI(state_machine=None, control_router=None, stream_tracker=None)
+
+
+def test_memoized_preview_encodes_once_per_frame():
+    ui = _ui()
+    frame = (bytes(4 * 2 * 3), "rgb8", 4, 2, 111)
+    a = ui._memoized_preview("cam", frame)
+    b = ui._memoized_preview("cam", frame)
+    assert a is b  # second call served from the memo — no re-encode
+    c = ui._memoized_preview("cam", (bytes(4 * 2 * 3), "rgb8", 4, 2, 222))
+    assert c is not a
+    assert c[:2] == b"\xff\xd8"  # new ts → fresh encode
+
+
+def test_memoized_preview_memoizes_encode_failure():
+    ui = _ui()
+    bad = (b"\x00" * 10, "yuv422", 4, 2, 333)
+    assert ui._memoized_preview("cam", bad) is None
+    # failure is memoized too — a second call does not raise or retry
+    assert ui._memoized_preview("cam", bad) is None

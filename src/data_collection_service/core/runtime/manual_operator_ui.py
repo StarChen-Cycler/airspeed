@@ -78,6 +78,7 @@ class ManualOperatorUI:
         logger: Callable[[str], None] | None = None,
         image_streams: list | None = None,
         latest_frames: dict | None = None,
+        frames_lock: threading.Lock | None = None,
     ) -> None:
         self._state = state_machine
         self._control = control_router
@@ -89,6 +90,9 @@ class ManualOperatorUI:
         self._log = logger or (lambda _: None)
         self._image_streams = image_streams or []
         self._latest_frames = latest_frames if latest_frames is not None else {}
+        # Guards latest_frames reads and the per-(stream, ts) preview memo.
+        self._frames_lock = frames_lock or threading.Lock()
+        self._preview_jpeg: dict[str, tuple[int, bytes | None]] = {}
         self._server: HTTPServer | None = None
         self._active_task: str | None = None
         self._task_target: int = 0
@@ -96,6 +100,27 @@ class ManualOperatorUI:
     @property
     def url(self) -> str:
         return f"http://{self._host}:{self._port}"
+
+    # -- image preview --
+
+    def _memoized_preview(self, name: str, frame: tuple) -> bytes | None:
+        """Preview JPEG for frame (data, encoding, w, h, ts_ns).
+
+        Encoded once per (stream, ts) and shared by all clients — N viewers
+        cost one PIL encode, not N. Encode happens outside the lock; a
+        duplicate concurrent encode is idempotent (last writer wins).
+        """
+        ts = frame[4]
+        memo = self._preview_jpeg.get(name)
+        if memo is None or memo[0] != ts:
+            try:
+                jpeg: bytes | None = _encode_preview_jpeg(frame)
+            except Exception:
+                jpeg = None
+            memo = (ts, jpeg)
+            with self._frames_lock:
+                self._preview_jpeg[name] = memo
+        return memo[1]
 
     # -- task management --
 
@@ -300,6 +325,9 @@ class ManualOperatorUI:
                 if name not in known:
                     self.send_error(404)
                     return
+                # Bound stalled clients: without a timeout a dead connection
+                # leaks its handler thread on wfile.write forever.
+                self.connection.settimeout(10.0)
                 self.send_response(200)
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
                 self.send_header("Cache-Control", "no-cache")
@@ -307,15 +335,14 @@ class ManualOperatorUI:
                 last_ts = None
                 try:
                     while True:
-                        frame = ui._latest_frames.get(name)
-                        # Re-encode only when the frame changed (≈ stream rate,
-                        # capped at ~10 fps for the preview).
+                        with ui._frames_lock:
+                            frame = ui._latest_frames.get(name)
+                        # Send only on frame change (≈ stream rate, capped at
+                        # ~10 fps); the JPEG is encoded once and shared across
+                        # clients via _memoized_preview.
                         if frame is not None and frame[4] != last_ts:
                             last_ts = frame[4]
-                            try:
-                                jpeg = _encode_preview_jpeg(frame)
-                            except Exception:
-                                jpeg = None
+                            jpeg = ui._memoized_preview(name, frame)
                             if jpeg is not None:
                                 self.wfile.write(b"--frame\r\n")
                                 self.wfile.write(b"Content-Type: image/jpeg\r\n")
@@ -324,7 +351,7 @@ class ManualOperatorUI:
                                 self.wfile.write(b"\r\n")
                                 self.wfile.flush()
                         _time.sleep(0.1)
-                except (BrokenPipeError, ConnectionResetError):
+                except (BrokenPipeError, ConnectionResetError, TimeoutError):
                     pass
 
             def _serve_page(self):
