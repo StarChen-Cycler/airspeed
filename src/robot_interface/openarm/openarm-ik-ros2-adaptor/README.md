@@ -254,4 +254,4 @@ bash launch/start.sh
 - [Robot Interface Convention](../../README.md) — JointState + PoseStamped spec
 - [VR Bridge Adaptor](../../../teleoperation_interface/vr-standard-ros2-bridge-adaptor/) — teleop data source
 - [Data Collection Service](../../../data_collection_service/README.md) — session YAML format
-- [Adapter Contract Guide](../../../../memodocs/adapter_contract_guide.md) — 3-layer contract rules
+- [Device & Stream Onboarding Guide](../../../../docs/device-onboarding-schema-guide.md) — 3-layer contract rules

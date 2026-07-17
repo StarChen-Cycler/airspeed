@@ -267,6 +267,10 @@ Full conventions are documented in each interface's README.
 The collector has no baked-in knowledge of specific hardware, topic names, or
 message types. Everything is declared in YAML.
 
+**Full schema reference**: [docs/device-onboarding-schema-guide.md](docs/device-onboarding-schema-guide.md)
+— the canonical message contract, complete session YAML schema, how to add a new
+message type, and how to connect remote devices.
+
 ---
 
 ## Distributed Data Collection Deployment
@@ -275,6 +279,14 @@ ROS2 (DDS) is the local data bus. For cross-machine transport across firewalls
 or subnets, use a relay bridge (ROS2→JSON→WebSocket→JSON→ROS2) tunneled through
 SSH, rather than configuring DDS routing directly. The relay preserves original
 `header.stamp` timestamps so cross-machine latency does not affect recorded data.
+
+Because recorded timestamps are creation-time stamps from each publisher's own
+clock, **all machines must share a synchronized clock** (chrony on a LAN, or
+PTP for tighter bounds) before recording — an unsynced remote publisher silently
+breaks cross-stream alignment. If the remote side can't run a managed clock
+(e.g. a browser-based headset), put the interface adaptor on the collector side
+of the link and stamp at receipt instead. Both patterns are covered in the
+[device onboarding guide](docs/device-onboarding-schema-guide.md#5-remote--long-distance-devices).
 
 ---
 

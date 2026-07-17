@@ -259,7 +259,7 @@ streams:
 | `sensor_msgs/Imu` | Vector: orientation(4) + angular_vel(3) + linear_accel(3) |
 
 Adding a new message type requires only a payload builder function and a profile entry —
-no changes to the flattening pipeline. See [adapter contract guide](../../memodocs/adapter_contract_guide.md).
+no changes to the flattening pipeline. See [device & stream onboarding guide](../../docs/device-onboarding-schema-guide.md).
 
 ## Recording Control
 

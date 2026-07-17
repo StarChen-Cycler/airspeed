@@ -209,5 +209,5 @@ streams:
 ## Reference
 
 - [Sensor Interface Convention](../README.md) — Image + CameraInfo spec
-- [Adapter Contract Guide](../../../memodocs/adapter_contract_guide.md) — image_encoding rules
+- [Device & Stream Onboarding Guide](../../../docs/device-onboarding-schema-guide.md) — image_encoding rules
 - [Data Collection Service](../../data_collection_service/README.md) — session YAML format
