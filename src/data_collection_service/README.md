@@ -253,6 +253,7 @@ streams:
 | `geometry_msgs/PoseStamped` | Vector: position(xyz) + orientation(xyzw) = 7 dims |
 | `sensor_msgs/JointState` | Vector: position + velocity + effort |
 | `std_msgs/Float32MultiArray` | Vector: data(N) |
+| `sensor_msgs/Joy` | Vector: axes(N) — discrete/button streams with `header.stamp` |
 | `sensor_msgs/Image` | Image: raw bytes or JPEG |
 | `sensor_msgs/PointCloud2` | Vector: flattened points |
 | `sensor_msgs/Imu` | Vector: orientation(4) + angular_vel(3) + linear_accel(3) |
@@ -387,4 +388,4 @@ Single machine, SHM transport:
 - [Root README](../../README.md) — architecture overview, ROS2 topic contract
 - [Robot Interface](../robot_interface/README.md) — JointState + PoseStamped convention
 - [Sensor Interface](../sensor_interface/README.md) — Image + CameraInfo convention
-- [Teleoperation Interface](../teleoperation_interface/README.md) — PoseStamped + Float32MultiArray convention
+- [Teleoperation Interface](../teleoperation_interface/README.md) — PoseStamped + Joy convention

@@ -190,6 +190,12 @@ If your robot SDK does not expose acquisition timestamps, set `time_domain: ros_
 in the session YAML for that stream. The collector will use the message arrival time as
 a fallback. This is less accurate but workable.
 
+The bundled OpenArm adaptors stamp at creation time so `ros_header` stays meaningful
+end to end: `arm_state_publisher` stamps right after the CAN-bus read (≈ encoder sample
+time), and the IK command publisher stamps at solver handoff — the instant a solution
+is produced, shared by all four command topics — rather than when the publish loop
+gets around to sending it.
+
 ## Topic Naming Convention
 
 Use semantic namespaces. The collector has no fixed topic names — the session YAML

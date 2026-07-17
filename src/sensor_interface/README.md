@@ -198,6 +198,11 @@ msg.header.stamp = self.get_clock().now().to_msg()
 If your sensor SDK does not expose hardware timestamps, set `time_domain: ros_receive`
 in the session YAML for that stream.
 
+The bundled camera-stream-adaptor stamps each frame immediately after `cam.read()`
+returns — before color conversion and JPEG encoding — because the RealSense wrapper
+does not expose hardware timestamps. Recorded stamps therefore sit ~1–5 ms from
+exposure instead of absorbing variable encode latency, and `ros_header` stays usable.
+
 ## IMU Convention
 
 `sensor_msgs/Imu` is the standard message for inertial measurements.

@@ -5,7 +5,7 @@ Date: 2026-07-14
 Full pipeline:
 
 ```
-ROS2 topic message (sensor_msgs/Image, geometry_msgs/PoseStamped, sensor_msgs/JointState, std_msgs/Float32MultiArray)
+ROS2 topic message (sensor_msgs/Image, geometry_msgs/PoseStamped, sensor_msgs/JointState, sensor_msgs/Joy, std_msgs/Float32MultiArray)
   → adapter payload extraction
   → adapter boundary sample
   → profile validation
@@ -216,7 +216,7 @@ def build_boundary_sample(
 
 ### what it does
 
-Selects the timestamp according to the stream's `time_domain`. For `ros_header` streams (most pose and joint streams) it uses the header stamp; for `ros_receive` streams (button streams) it uses the local receive time. Then it wraps payload, identity, and timestamp into a frozen dataclass.
+Selects the timestamp according to the stream's `time_domain`. For `ros_header` streams it uses the header stamp — this covers every stream in the shipped session config, including button streams (now `sensor_msgs/Joy`, which carries a header). `ros_receive` remains as a fallback for header-less message types, using the local receive time. Then it wraps payload, identity, and timestamp into a frozen dataclass.
 
 ### output example with emphasis
 

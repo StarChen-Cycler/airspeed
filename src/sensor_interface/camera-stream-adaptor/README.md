@@ -22,6 +22,10 @@ Topics are derived from the config. Default three-camera setup:
 CameraInfo is published once at startup with TRANSIENT_LOCAL durability (latched) —
 late subscribers receive intrinsics without waiting for a republish.
 
+`Image.header.stamp` is captured immediately after each frame read returns, before
+color conversion and JPEG encoding — recorded timestamps reflect frame return
+(≈ exposure time), not publish or post-encode time.
+
 ## Quick Start
 
 ```bash

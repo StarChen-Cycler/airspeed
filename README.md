@@ -52,7 +52,7 @@ AIRSPEED v1.3 consists of three interfaces and one core service:
 
 * The **Teleoperation Interface** receives data from any operator input device
   (VR controller, joystick, foot pedal, etc.) and publishes standardized
-  `PoseStamped` and `Float32MultiArray` messages to ROS2 topics.
+  `PoseStamped` and `sensor_msgs/Joy` messages to ROS2 topics.
 * The **Robot Interface** converts teleoperation commands into control
   parameters for any robot arm and receives joint state feedback. Includes
   a JAX-based inverse kinematics solver and CAN bus motor control.
@@ -162,7 +162,7 @@ The IK adaptor monitoring UI is at `http://localhost:5200`.
 airspeed/
 ├── README.md
 └── src/
-    ├── teleoperation_interface/             # CONTRACT: PoseStamped + Float32MultiArray
+    ├── teleoperation_interface/             # CONTRACT: PoseStamped + Joy
     │   ├── global_config.yaml               #   points to active adaptor
     │   ├── run_global_config.sh             #   reads config → launches adaptor
     │   └── vr-standard-ros2-bridge-adaptor/ #   HTTPS server → /vr/* ROS2 topics
@@ -239,16 +239,19 @@ Your publishers MUST follow these rules:
 |------|-------------|---------------|
 | Pose (position + orientation) | `geometry_msgs/PoseStamped` | `/vr/head_pose` |
 | Joint states | `sensor_msgs/JointState` | `/arm/joint_states` |
-| Numeric arrays (buttons) | `std_msgs/Float32MultiArray` | `/vr/buttons` |
+| Discrete inputs (buttons, triggers) | `sensor_msgs/Joy` | `/vr/left_buttons` |
 | Camera image | `sensor_msgs/Image` | `/camera/color` |
 | Point cloud | `sensor_msgs/PointCloud2` | `/camera/points` |
 | IMU | `sensor_msgs/Imu` | `/imu` |
 
 **Key rules**:
-1. Every message with a header must carry hardware acquisition timestamps
+1. Every message carries a header whose `stamp` is the data-creation time — sensor
+   exposure (frame read), motor feedback read, solver output, or bridge receipt —
+   not the time the message happened to be published
 2. One logical signal per topic — don't multiplex
 3. Use semantic namespaces (`/arm/left/joint_states`)
-4. Prefer `JointState` over `Float32MultiArray` for joint data
+4. Prefer `JointState` over `Float32MultiArray` for joint data, and `Joy` for
+   discrete inputs — both carry a header, so every stream can use `ros_header`
 
 Full conventions are documented in each interface's README.
 
