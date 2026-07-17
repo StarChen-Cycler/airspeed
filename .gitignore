@@ -7,7 +7,7 @@ dist/
 .eggs/
 *.h5
 *.hdf5
-data/episodes/
+**/data/episodes/
 logs/
 *.log
 .env
