@@ -13,8 +13,8 @@ Published topics:
   /vr/head_pose        — geometry_msgs/PoseStamped
   /vr/left_pose        — geometry_msgs/PoseStamped
   /vr/right_pose       — geometry_msgs/PoseStamped
-  /vr/left_buttons     — std_msgs/Float32MultiArray
-  /vr/right_buttons    — std_msgs/Float32MultiArray
+  /vr/left_buttons     — sensor_msgs/Joy
+  /vr/right_buttons    — sensor_msgs/Joy
 
 Dependencies: Python 3.10+, aiohttp, rclpy, std_msgs, geometry_msgs
 """
@@ -45,7 +45,7 @@ try:
     from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
     from std_msgs.msg import String
     from geometry_msgs.msg import PoseStamped
-    from std_msgs.msg import Float32MultiArray
+    from sensor_msgs.msg import Joy
     ROS2_AVAILABLE = True
 except ImportError:
     ROS2_AVAILABLE = False
@@ -221,8 +221,8 @@ class VrBridgeNode(Node):
         self.right_pub = self.create_publisher(PoseStamped, '/vr/right_pose', REALTIME_QOS)
 
         # Button topics
-        self.left_btn_pub = self.create_publisher(Float32MultiArray, '/vr/left_buttons', REALTIME_QOS)
-        self.right_btn_pub = self.create_publisher(Float32MultiArray, '/vr/right_buttons', REALTIME_QOS)
+        self.left_btn_pub = self.create_publisher(Joy, '/vr/left_buttons', REALTIME_QOS)
+        self.right_btn_pub = self.create_publisher(Joy, '/vr/right_buttons', REALTIME_QOS)
 
         self._count = 0
         self._last = time.time()
@@ -245,13 +245,13 @@ class VrBridgeNode(Node):
         if 'left' in data:
             self.left_pub.publish(_make_pose(data['left'], now, 'vr_left'))
             if 'button' in data['left']:
-                self.left_btn_pub.publish(_make_buttons(data['left']['button']))
+                self.left_btn_pub.publish(_make_buttons(data['left']['button'], now))
 
         # Right controller
         if 'right' in data:
             self.right_pub.publish(_make_pose(data['right'], now, 'vr_right'))
             if 'button' in data['right']:
-                self.right_btn_pub.publish(_make_buttons(data['right']['button']))
+                self.right_btn_pub.publish(_make_buttons(data['right']['button'], now))
 
         # Stats (every 5 s)
         self._count += 1
@@ -278,13 +278,15 @@ def _make_pose(data: Dict, stamp, frame_id: str) -> PoseStamped:
     return m
 
 
-def _make_buttons(buttons: List) -> Float32MultiArray:
-    m = Float32MultiArray()
+def _make_buttons(buttons: List, stamp) -> Joy:
+    m = Joy()
+    m.header.stamp = stamp
     vals = [float(b.get('value', 0)) for b in buttons[:6]]
     # Pad to exactly 6 channels — missing buttons default to 0.0 (released)
     while len(vals) < 6:
         vals.append(0.0)
-    m.data = vals
+    # All channels are analog-capable (triggers/grips) → axes; buttons stays empty
+    m.axes = vals
     return m
 
 
@@ -407,8 +409,8 @@ def main() -> None:
         "  /vr/head_pose       (PoseStamped)\n"
         "  /vr/left_pose       (PoseStamped)\n"
         "  /vr/right_pose      (PoseStamped)\n"
-        "  /vr/left_buttons    (Float32MultiArray)\n"
-        "  /vr/right_buttons   (Float32MultiArray)"
+        "  /vr/left_buttons    (Joy)\n"
+        "  /vr/right_buttons   (Joy)"
     )
     logger.info("=" * 55)
     logger.info("VR-Standard ROS2 Bridge Adaptor")

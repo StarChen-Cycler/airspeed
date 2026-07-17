@@ -1,7 +1,7 @@
 # VR-Standard ROS2 Bridge Adaptor
 
 HTTP/HTTPS-to-ROS2 bridge that receives VR device pose and button data and publishes it
-as standard `PoseStamped` and `Float32MultiArray` messages matching the
+as standard `PoseStamped` and `sensor_msgs/Joy` messages matching the
 [AIRSPEED teleoperation interface convention](../README.md).
 
 ## What It Does
@@ -20,8 +20,8 @@ as standard `PoseStamped` and `Float32MultiArray` messages matching the
 | `/vr/head_pose` | `geometry_msgs/PoseStamped` | Headset position + orientation |
 | `/vr/left_pose` | `geometry_msgs/PoseStamped` | Left controller position + orientation |
 | `/vr/right_pose` | `geometry_msgs/PoseStamped` | Right controller position + orientation |
-| `/vr/left_buttons` | `std_msgs/Float32MultiArray` | Left controller button/trigger values (6 channels) |
-| `/vr/right_buttons` | `std_msgs/Float32MultiArray` | Right controller button/trigger values (6 channels) |
+| `/vr/left_buttons` | `sensor_msgs/Joy` | Left controller button/trigger values (6 axes channels) |
+| `/vr/right_buttons` | `sensor_msgs/Joy` | Right controller button/trigger values (6 axes channels) |
 | `/vr_raw_data` | `std_msgs/String` | Raw JSON string (debug / backward compat) |
 
 These topics match the [teleoperation interface data convention](../README.md). The data
@@ -337,15 +337,15 @@ streams:
   - name: "right_buttons"
     source: teleop
     topic: "/vr/right_buttons"
-    message_type: "std_msgs/Float32MultiArray"
-    time_domain: ros_receive
+    message_type: "sensor_msgs/Joy"
+    time_domain: ros_header
     qos:
       reliability: best_effort
       durability: volatile
       history: keep_last
       depth: 1
     fields:
-      - path: "data"
+      - path: "axes"
         type: sequence
         required: true
 ```

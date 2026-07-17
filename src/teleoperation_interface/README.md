@@ -10,7 +10,7 @@ declares — it has no baked-in knowledge of specific devices.
 > **The bundled adaptor is an example.** To use a different teleoperation device (joystick,
 > foot pedal, haptic stylus, etc.), create a new adaptor folder with a `launch/start.sh`
 > script and a ROS2 publisher node. The interface only cares about the topic contract
-> below — any device that publishes `PoseStamped` and/or `Float32MultiArray` is compatible.
+> below — any device that publishes `PoseStamped` and/or `sensor_msgs/Joy` is compatible.
 
 ## Launch
 
@@ -96,7 +96,7 @@ The collector records two kinds of data from an operator input device:
 | Data Category | Purpose | Required Message Type |
 |--------------|---------|----------------------|
 | 6-DOF pose | Position and orientation of a tracked point (hand, stylus, head, etc.) | `geometry_msgs/PoseStamped` |
-| Discrete inputs | Button presses, trigger values, switch states | `std_msgs/Float32MultiArray` |
+| Discrete inputs | Button presses, trigger values, switch states | `sensor_msgs/Joy` |
 
 Any device that can produce one or both of these is compatible. The session YAML
 declares which topics to subscribe to — declare only the ones your device provides.
@@ -148,16 +148,19 @@ slider all produce partial poses.
 The session YAML's `fields` list declares which components are `required: true` —
 declare only the axes your device provides.
 
-## Float32MultiArray Convention (Discrete Inputs)
+## Joy Convention (Discrete Inputs)
 
-`std_msgs/Float32MultiArray` carries button states, trigger values, switch positions,
-or any other discrete operator input as a flat float array.
+`sensor_msgs/Joy` carries button states, trigger values, switch positions,
+or any other discrete operator input. Continuous/analog values go in `axes`
+(float32); the `buttons` int32 array is reserved for strictly on/off inputs.
 
 ```python
-from std_msgs.msg import Float32MultiArray
+from sensor_msgs.msg import Joy
 
-msg = Float32MultiArray()
-msg.data = [0.0, 0.0, 1.0, 0.5, 0.0, 0.0]  # 6 input channels
+msg = Joy()
+msg.header.stamp = device_timestamp            # acquisition time from device
+msg.axes = [0.0, 0.0, 1.0, 0.5, 0.0, 0.0]      # 6 input channels
+msg.buttons = []                               # unused — all channels are analog-capable
 ```
 
 ### Value Convention
@@ -174,11 +177,11 @@ msg.data = [0.0, 0.0, 1.0, 0.5, 0.0, 0.0]  # 6 input channels
 The collector stores these values as-is. It is your driver's responsibility to normalize
 device-specific ranges (e.g., 0–255 → 0.0–1.0) before publishing.
 
-### No Header
+### Header
 
-`Float32MultiArray` has no `header` field. The collector cannot read an acquisition
-timestamp from this message type. For button streams, set `time_domain: ros_receive`
-in the session YAML — the collector uses the ROS2 message arrival time instead.
+`Joy` has a standard `header`. Stamp it with the acquisition time (device sample
+time, or arrival time at your bridge for devices that POST data over HTTP) so
+button streams can use `time_domain: ros_header` like every other stream.
 
 ### Channel Order
 
@@ -211,8 +214,8 @@ msg.header.stamp = device.get_timestamp()
 msg.header.stamp = self.get_clock().now().to_msg()
 ```
 
-**For Float32MultiArray**: No header exists. The session YAML must use `time_domain: ros_receive`.
-This is the nature of the message type, not a flaw in your driver.
+**For Joy**: same rule — `header.stamp` carries the acquisition time, so button
+streams use `time_domain: ros_header` like pose streams.
 
 ## Device Binding for Recording Control
 
@@ -225,7 +228,7 @@ recording_control:
   mode: device_binding
   bindings:
     start:
-      stream_name: "operator_buttons"  # the Float32MultiArray stream name in this session
+      stream_name: "operator_buttons"  # the Joy button stream name in this session
       button_index: 0                  # which channel triggers recording
       threshold: 0.5                   # value above threshold = pressed
     stop:
@@ -305,15 +308,15 @@ streams:
   - name: "right_buttons"
     source: teleop
     topic: "/operator/right/buttons"
-    message_type: "std_msgs/Float32MultiArray"
-    time_domain: ros_receive         # no header in Float32MultiArray
+    message_type: "sensor_msgs/Joy"
+    time_domain: ros_header
     qos:
       reliability: best_effort
       durability: volatile
       history: keep_last
       depth: 1
     fields:
-      - path: "data"
+      - path: "axes"
         type: sequence
         required: true
 ```
@@ -352,15 +355,15 @@ streams:
   - name: "pedal_buttons"
     source: teleop
     topic: "/operator/pedal/buttons"
-    message_type: "std_msgs/Float32MultiArray"
-    time_domain: ros_receive
+    message_type: "sensor_msgs/Joy"
+    time_domain: ros_header
     qos:
       reliability: best_effort
       durability: volatile
       history: keep_last
       depth: 1
     fields:
-      - path: "data"
+      - path: "axes"
         type: sequence
         required: true
 ```
@@ -368,16 +371,16 @@ streams:
 ## Device Type Reference
 
 The data collection service has no knowledge of what device produced the messages.
-Any device that publishes PoseStamped and/or Float32MultiArray is compatible.
+Any device that publishes PoseStamped and/or Joy is compatible.
 
 | Device | Produces | Notes |
 |--------|----------|-------|
 | VR/AR controller | 6-DOF pose + buttons | May need coordinate transform from Y-up to Z-up |
-| Haptic stylus | 3–6 DOF pose + pressure | Map pressure to a Float32MultiArray channel |
+| Haptic stylus | 3–6 DOF pose + pressure | Map pressure to a Joy axes channel |
 | 3D mouse / SpaceMouse | 6-DOF delta | Integrate to absolute pose, or publish as velocity stream |
-| Joystick / gamepad | 2–4 axes + buttons | Map axes to a fixed-plane PoseStamped, buttons to Float32MultiArray |
-| Keyboard | Key events | Map keys to Float32MultiArray channels |
-| Foot pedal | 1–3 switches | Publish as Float32MultiArray |
+| Joystick / gamepad | 2–4 axes + buttons | Map axes to a fixed-plane PoseStamped, buttons to Joy axes |
+| Keyboard | Key events | Map keys to Joy axes channels |
+| Foot pedal | 1–3 switches | Publish as Joy axes |
 | Mobile / tablet app | Pose + touch events | Bridge over network to ROS2 topics |
 | Motion capture marker | 3-DOF position | Publish as PoseStamped with identity orientation |
 
