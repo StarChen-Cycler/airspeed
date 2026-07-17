@@ -212,7 +212,8 @@ class VRSubscriber:
             from rclpy.node import Node
             from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
             from geometry_msgs.msg import PoseStamped
-            from std_msgs.msg import Float32MultiArray, String
+            from std_msgs.msg import String
+            from sensor_msgs.msg import Joy
         except ImportError as exc:
             logger.error(f"ROS2 import failed in subscriber thread: {exc}")
             self._ros2_available = False
@@ -241,8 +242,8 @@ class VRSubscriber:
                 orientation_wxyz=[o.w, o.x, o.y, o.z],
             )
 
-        def _parse_buttons(msg: Float32MultiArray, side: str) -> None:
-            self.data_store.update_buttons(side=side, buttons=list(msg.data))
+        def _parse_buttons(msg: Joy, side: str) -> None:
+            self.data_store.update_buttons(side=side, buttons=list(msg.axes))
 
         def _parse_raw(msg: String) -> None:
             import json
@@ -254,8 +255,8 @@ class VRSubscriber:
         node.create_subscription(PoseStamped, topics.left_pose, lambda m: _parse_pose(m, "left"), qos_profile)
         node.create_subscription(PoseStamped, topics.right_pose, lambda m: _parse_pose(m, "right"), qos_profile)
         node.create_subscription(PoseStamped, topics.head_pose, lambda m: _parse_pose(m, "head"), qos_profile)
-        node.create_subscription(Float32MultiArray, topics.left_buttons, lambda m: _parse_buttons(m, "left"), qos_profile)
-        node.create_subscription(Float32MultiArray, topics.right_buttons, lambda m: _parse_buttons(m, "right"), qos_profile)
+        node.create_subscription(Joy, topics.left_buttons, lambda m: _parse_buttons(m, "left"), qos_profile)
+        node.create_subscription(Joy, topics.right_buttons, lambda m: _parse_buttons(m, "right"), qos_profile)
         node.create_subscription(String, topics.raw_data, _parse_raw, qos_profile)
 
         executor = SingleThreadedExecutor()

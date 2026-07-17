@@ -46,8 +46,8 @@ subscribe to any subset declared in its session YAML.
 | `/vr/head_pose` | `geometry_msgs/PoseStamped` | [VR bridge adaptor](../../../teleoperation_interface/vr-standard-ros2-bridge-adaptor/) |
 | `/vr/left_pose` | `geometry_msgs/PoseStamped` | VR bridge |
 | `/vr/right_pose` | `geometry_msgs/PoseStamped` | VR bridge |
-| `/vr/left_buttons` | `std_msgs/Float32MultiArray` | VR bridge (trigger = gripper) |
-| `/vr/right_buttons` | `std_msgs/Float32MultiArray` | VR bridge (trigger = gripper) |
+| `/vr/left_buttons` | `sensor_msgs/Joy` | VR bridge (trigger = gripper) |
+| `/vr/right_buttons` | `sensor_msgs/Joy` | VR bridge (trigger = gripper) |
 
 ## Prerequisites
 
