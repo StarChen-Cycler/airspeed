@@ -256,6 +256,11 @@ class CameraPublisherNode(Node):
                     if frame is None or frame.size == 0:
                         continue
 
+                    # Stamp at frame return (≈ exposure time) — before color
+                    # convert and JPEG encode, whose variable latency must not
+                    # leak into the canonical timestamp.
+                    stamp = self.get_clock().now().to_msg()
+
                     if len(frame.shape) == 3 and frame.shape[2] == 3:
                         frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     else:
@@ -269,7 +274,7 @@ class CameraPublisherNode(Node):
                     jpeg_bytes = jpeg_buf.tobytes()
 
                     msg = Image()
-                    msg.header.stamp = self.get_clock().now().to_msg()
+                    msg.header.stamp = stamp
                     msg.header.frame_id = s["frame_id"]
                     msg.height = frame.shape[0]
                     msg.width = frame.shape[1]
