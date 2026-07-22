@@ -374,6 +374,8 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
             target_period = 1.0 / fps
             latest = {"left": [], "right": [], "left_gripper_deg": None, "right_gripper_deg": None}
             last_msg_time = time.perf_counter()
+            now = t0  # initialized up front: the first-iteration stream-timeout
+            # path below references `now` before the end-of-loop assignment
             prev_cmd: dict = {}  # seeded on first frame (same as ws_follower_arm_control.py)
 
             # Background task that continuously reads WebSocket messages
