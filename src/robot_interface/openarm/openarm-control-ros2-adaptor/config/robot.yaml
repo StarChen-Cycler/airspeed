@@ -36,7 +36,11 @@ kp:
   joint_3: 120.0
   joint_4: 120.0
   joint_5: 27.0
-  joint_6: 36.0
+  # J6 36 -> 45 (2026-07-22, operator-directed exception to the freeze):
+  # wrist pitch under-reaches command amplitude UNDER LOAD (holding the can),
+  # tau 250-285 ms loaded vs 120 ms unloaded. kd sqrt-scaled (2.6 -> 2.9),
+  # damping preserved. Whole-arm freeze on J1-J4 stands.
+  joint_6: 45.0
   joint_7: 27.0
   gripper: 20.0
 kd:
@@ -47,7 +51,7 @@ kd:
   joint_3: 5.0
   joint_4: 5.0
   joint_5: 2.0
-  joint_6: 2.6
+  joint_6: 2.9
   joint_7: 2.0
   gripper: 1.4
 arm_state_hz: 50
