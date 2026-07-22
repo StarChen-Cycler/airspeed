@@ -20,8 +20,9 @@ def _encode_preview_frame(frame: tuple) -> tuple[bytes, str]:
     """Encode one cached frame for the browser preview — no lossy compression.
 
     frame: (data, encoding, width, height, ts_ns). jpeg payloads pass through
-    unchanged (already compressed at source); raw pixel encodings are wrapped
-    as uncompressed BMP so the preview is pixel-exact. Returns (payload, mime).
+    unchanged (already compressed at source); raw pixel encodings are encoded
+    as lossless PNG so the preview is pixel-exact at a fraction of BMP size.
+    Returns (payload, mime).
     """
     data, encoding, width, height, _ts_ns = frame
     if encoding == "jpeg":
@@ -36,8 +37,8 @@ def _encode_preview_frame(frame: tuple) -> tuple[bytes, str]:
     else:
         raise ValueError(f"unsupported preview encoding: {encoding!r}")
     buf = io.BytesIO()
-    img.save(buf, "BMP")
-    return buf.getvalue(), "image/bmp"
+    img.save(buf, "PNG")
+    return buf.getvalue(), "image/png"
 
 
 def build_image_stream_info(image_streams, latest_frames, tracker_snapshot):

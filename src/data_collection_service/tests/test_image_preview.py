@@ -20,22 +20,22 @@ def test_jpeg_passthrough_identical():
     assert mime == "image/jpeg"
 
 
-def test_raw_rgb8_encodes_to_uncompressed_bmp():
+def test_raw_rgb8_encodes_to_lossless_png():
     payload, mime = _encode_preview_frame((bytes(4 * 2 * 3), "rgb8", 4, 2, 1))
-    assert mime == "image/bmp"
-    assert payload[:2] == b"BM"
+    assert mime == "image/png"
+    assert payload[:4] == b"\x89PNG"
     from PIL import Image
     img = Image.open(io.BytesIO(payload))
     assert img.size == (4, 2)
     assert img.mode == "RGB"
-    # BMP is uncompressed: payload is exactly the pixel data plus header.
-    assert len(payload) > 4 * 2 * 3
+    # PNG is lossless: pixel data survives the roundtrip exactly.
+    assert list(img.getdata()) == [(0, 0, 0)] * (4 * 2)
 
 
 def test_raw_mono8_encodes():
     payload, mime = _encode_preview_frame((bytes(4 * 2), "mono8", 4, 2, 1))
-    assert mime == "image/bmp"
-    assert payload[:2] == b"BM"
+    assert mime == "image/png"
+    assert payload[:4] == b"\x89PNG"
 
 
 def test_bad_dims_and_unknown_encoding_raise():
@@ -80,8 +80,8 @@ def test_memoized_preview_encodes_once_per_frame():
     assert a is b  # second call served from the memo — no re-encode
     c = ui._memoized_preview("cam", (bytes(4 * 2 * 3), "rgb8", 4, 2, 222))
     assert c is not a
-    assert c[1] == "image/bmp"
-    assert c[0][:2] == b"BM"  # new ts → fresh encode
+    assert c[1] == "image/png"
+    assert c[0][:4] == b"\x89PNG"  # new ts → fresh encode
 
 
 def test_memoized_preview_memoizes_encode_failure():
