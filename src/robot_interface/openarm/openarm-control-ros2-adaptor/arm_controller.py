@@ -172,41 +172,50 @@ def _clamp_joint_deltas(
 
 
 def _apply_joints(follower, left_deg, right_deg, left_grip_deg, right_grip_deg, cfg: dict,
-                  follower_obs: dict | None = None) -> None:
-    if follower_obs is None:
-        follower_obs = follower.get_observation()
-    gravity = _compute_gravity(follower, follower_obs)
-
+                  gravity: dict) -> dict:
+    """Send one batched MIT command round per bus (7 joints + gripper when
+    commanded) and return the decoded status replies keyed by side-prefixed
+    motor name (e.g. "left_joint_1") with degree units, as sync_read_all_states.
+    Batch replies ARE fresh motor states at command time — the caller merges
+    them into the observation cache instead of a separate read round."""
+    commands_right: dict = {}
     for i, motor in enumerate(follower.bus_right.motors):
         if i >= 7:
             break
         if i < len(right_deg):
-            torque = gravity.get(f"right_{motor}", 0.0)
-            follower.bus_right._mit_control(
-                motor=motor, kp=_get_kp(cfg, motor), kd=_get_kd(cfg, motor),
-                position_degrees=float(right_deg[i]), velocity_deg_per_sec=0.0, torque=torque,
+            commands_right[motor] = (
+                _get_kp(cfg, motor), _get_kd(cfg, motor),
+                float(right_deg[i]), 0.0, gravity.get(f"right_{motor}", 0.0),
             )
+    if right_grip_deg is not None:
+        commands_right["gripper"] = (
+            _get_kp(cfg, "gripper"), _get_kd(cfg, "gripper"),
+            right_grip_deg, 0.0, 0.0,
+        )
 
+    commands_left: dict = {}
     for i, motor in enumerate(follower.bus_left.motors):
         if i >= 7:
             break
         if i < len(left_deg):
-            torque = gravity.get(f"left_{motor}", 0.0)
-            follower.bus_left._mit_control(
-                motor=motor, kp=_get_kp(cfg, motor), kd=_get_kd(cfg, motor),
-                position_degrees=float(left_deg[i]), velocity_deg_per_sec=0.0, torque=torque,
+            commands_left[motor] = (
+                _get_kp(cfg, motor), _get_kd(cfg, motor),
+                float(left_deg[i]), 0.0, gravity.get(f"left_{motor}", 0.0),
             )
-
     if left_grip_deg is not None:
-        follower.bus_left._mit_control(
-            motor="gripper", kp=_get_kp(cfg, "gripper"), kd=_get_kd(cfg, "gripper"),
-            position_degrees=left_grip_deg, velocity_deg_per_sec=0.0, torque=0.0,
+        commands_left["gripper"] = (
+            _get_kp(cfg, "gripper"), _get_kd(cfg, "gripper"),
+            left_grip_deg, 0.0, 0.0,
         )
-    if right_grip_deg is not None:
-        follower.bus_right._mit_control(
-            motor="gripper", kp=_get_kp(cfg, "gripper"), kd=_get_kd(cfg, "gripper"),
-            position_degrees=right_grip_deg, velocity_deg_per_sec=0.0, torque=0.0,
-        )
+
+    states: dict = {}
+    if commands_right:
+        for m, st in follower.bus_right._mit_control_batch(commands_right).items():
+            states[f"right_{m}"] = st
+    if commands_left:
+        for m, st in follower.bus_left._mit_control_batch(commands_left).items():
+            states[f"left_{m}"] = st
+    return states
 
 
 def _get_kp(cfg: dict, motor: str) -> float:
@@ -365,6 +374,10 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
             now = t0  # initialized up front: the first-iteration stream-timeout
             # path below references `now` before the end-of-loop assignment
             prev_cmd: dict = {}  # seeded on first frame (same as ws_follower_arm_control.py)
+            # Observation cache (get_observation layout, radians): seeded by a
+            # full read, then updated in place by the batched MIT replies —
+            # no separate read round in the steady-state loop.
+            last_obs: dict | None = None
 
             # Background task that continuously reads WebSocket messages
             # and updates the shared 'latest' dict with the newest joint commands.
@@ -427,6 +440,7 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
                             print("  Stream resumed")
                             timeout_start = None
                             prev_cmd.clear()  # reset clamp tracking after a gap
+                            last_obs = None  # force a fresh observation read
 
                         # Clamp per-joint deltas for safety — no joint can change
                         # more than MAX_JOINT_DELTA_DEG per cycle (~90 deg/s at 30 Hz)
@@ -435,14 +449,21 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
                             latest.get("left_gripper_deg"), latest.get("right_gripper_deg"),
                             prev_cmd, cfg,
                         )
-                        # Send MIT impedance commands to CAN bus motors
-                        # Uses position + velocity + torque feed-forward (gravity comp).
-                        # One observation read per cycle — published immediately
-                        # (stamp ≈ read time), then reused for gravity comp.
-                        follower_obs = follower.get_observation()
-                        _publish_state(follower_obs)
-                        _apply_joints(follower, left_deg, right_deg, left_grip, right_grip, cfg,
-                                      follower_obs=follower_obs)
+                        # Send MIT impedance commands — one batched round per bus.
+                        # Gravity feed-forward uses the latest decoded bus states
+                        # (first cycle after connect/resume reads a full
+                        # observation); the batch replies are this cycle's fresh
+                        # joint state and feed publishing + the next gravity pass.
+                        if last_obs is None:
+                            last_obs = follower.get_observation()
+                        gravity = _compute_gravity(follower, last_obs)
+                        for key, st in _apply_joints(
+                                follower, left_deg, right_deg, left_grip, right_grip,
+                                cfg, gravity).items():
+                            last_obs[f"{key}.pos"] = np.deg2rad(st["position"])
+                            last_obs[f"{key}.vel"] = np.deg2rad(st["velocity"])
+                            last_obs[f"{key}.torque"] = st["torque"]
+                        _publish_state(last_obs)
 
                     count += 1
                     now = time.perf_counter()

@@ -444,7 +444,7 @@ class DamiaoMotorsBus(MotorsBusBase):
     def _mit_control_batch(
         self,
         commands: Dict[NameOrID, Tuple[float, float, float, float, float]],
-    ) -> None:
+    ) -> Dict[str, Dict[str, float]]:
         """
         Send MIT control commands to multiple motors in batch (optimized).
         Sends all commands first, then collects responses. Much faster than sequential.
@@ -452,11 +452,17 @@ class DamiaoMotorsBus(MotorsBusBase):
         Args:
             commands: Dict mapping motor name/ID to (kp, kd, position_deg, velocity_deg/s, torque)
                      Example: {'joint_1': (10.0, 0.5, 45.0, 0.0, 0.0), ...}
+
+        Returns:
+            Decoded status replies, keyed by motor name, same shape and units as
+            sync_read_all_states: {motor: {"position", "velocity", "torque",
+            "temp_mos", "temp_rotor"}}. Motors that did not answer are omitted.
+            Existing callers may ignore the return value.
         """
         if not commands:
-            return
+            return {}
         
-        expected_recv_ids = []
+        motor_recv_pairs: list[tuple[NameOrID, int]] = []
         
         # Step 1: Send all MIT control commands (no waiting)
         for motor, (kp, kd, position_degrees, velocity_deg_per_sec, torque) in commands.items():
@@ -494,11 +500,30 @@ class DamiaoMotorsBus(MotorsBusBase):
             self.canbus.send(msg)
             
             # Track expected response
-            recv_id = self._get_motor_recv_id(motor)
-            expected_recv_ids.append(recv_id)
+            motor_recv_pairs.append((motor, self._get_motor_recv_id(motor)))
         
         # Step 2: Collect all responses at once
-        self._recv_all_responses(expected_recv_ids, timeout=0.002)
+        responses = self._recv_all_responses(
+            [rid for _, rid in motor_recv_pairs], timeout=0.002)
+
+        # Step 3: Decode replies (same layout/units as sync_read_all_states)
+        states: Dict[str, Dict[str, float]] = {}
+        for motor, recv_id in motor_recv_pairs:
+            msg = responses.get(recv_id)
+            if msg is None:
+                continue
+            motor_name = self._get_motor_name(motor)
+            motor_type = self._motor_types.get(motor_name, MotorType.DM4310)
+            pos_deg, vel_degs, torque_val, t_mos, t_rotor = self._decode_motor_state(
+                msg.data, motor_type)
+            states[motor_name] = {
+                "position": pos_deg,
+                "velocity": vel_degs,
+                "torque": torque_val,
+                "temp_mos": t_mos,
+                "temp_rotor": t_rotor,
+            }
+        return states
 
     def _float_to_uint(self, x: float, x_min: float, x_max: float, bits: int) -> int:
         """Convert float to unsigned integer for CAN transmission."""
