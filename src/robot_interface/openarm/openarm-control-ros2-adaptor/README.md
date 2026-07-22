@@ -7,22 +7,33 @@ Deploy independently of camera streams.
 
 | Script | Role | ROS2 required? |
 |--------|------|---------------|
-| `arm_state_publisher.py` | Reads joints via CAN bus → publishes `JointState` to ROS2 | Yes |
-| `arm_controller.py` | Receives IK commands via WebSocket → drives motors | No |
+| `arm_controller.py` | Receives IK commands via WebSocket → drives motors; publishes `JointState` **in-process** from its own observation reads (default) | Yes (for state publishing) |
+| `joint_state_publisher.py` | In-process `JointState` publisher used by `arm_controller.py` | Yes |
+| `arm_state_publisher.py` | Legacy standalone publisher (rollback only, `--external-publisher`) | Yes |
 
 ## Published ROS2 Topics
 
 | Topic | Type | Content |
 |-------|------|---------|
-| `/arm/left/joint_state` | `sensor_msgs/JointState` | Left arm: 7 joints + gripper (radians) |
-| `/arm/right/joint_state` | `sensor_msgs/JointState` | Right arm: 7 joints + gripper (radians) |
+| `/arm/left/joint_state` | `sensor_msgs/JointState` | Left arm: 7 joints + gripper (position/velocity/effort) |
+| `/arm/right/joint_state` | `sensor_msgs/JointState` | Right arm: 7 joints + gripper (position/velocity/effort) |
 
-Each `JointState` includes `header.stamp`, `header.frame_id=base_link`, and `name[]`
-from `config/robot.yaml`.
+Each `JointState` includes `header.stamp` (taken at observation read time),
+`header.frame_id=base_link`, and `name[]` from `config/robot.yaml`.
+`velocity[]` and `effort[]` are filled from the motor status frames for live
+consumers; the data collection service still records position only (no
+session YAML change).
+
+**Why in-process publishing:** the controller already reads fresh motor
+states every control cycle for gravity compensation. Publishing from the
+same process makes it the single SocketCAN owner on can0/can1 — the legacy
+subprocess opened a second unfiltered socket whose kernel RX buffer
+saturated, so it published stale positions with fresh timestamps (~0.3–1 s
+recorded cmd→state lag artifact).
 
 ## Quick Start
 
-**Launch script** (starts controller + publisher together):
+**Launch script** (starts controller with in-process publisher):
 
 ```bash
 cd openarm-control-ros2-adaptor
@@ -32,7 +43,18 @@ bash launch/start.sh
 Calibrates, homes, waits for ENTER, then streams motor commands and publishes
 `JointState` to ROS2.
 
-**Standalone — Arm state publisher:**
+**Rollback — legacy external publisher** (spawns `arm_state_publisher.py` as
+a subprocess, mutually exclusive with the in-process one):
+
+```bash
+python3 arm_controller.py --external-publisher
+```
+
+If the in-process publisher fails to start (e.g. ROS2 environment not
+sourced), the controller logs a warning and falls back to the legacy
+subprocess automatically. `--no-publisher` disables state publishing.
+
+**Standalone — Arm state publisher (legacy):**
 
 ```bash
 cd openarm-control-ros2-adaptor
@@ -55,7 +77,7 @@ The lerobot SDK is vendored in `lerobot/` — no separate install needed.
 | Requirement | Check | Install |
 |-----------|-------|---------|
 | Python 3.10+ | `python3 --version` | Activate your env (conda/venv) before running |
-| ROS2 Humble | `source /opt/ros/humble/setup.bash` | Only needed for `arm_state_publisher.py` |
+| ROS2 Humble | `source /opt/ros/humble/setup.bash` | Needed for state publishing (in-process default and legacy publisher) |
 | SocketCAN | `ip link show can0` | `sudo ip link set can0 type can bitrate 1000000; sudo ip link set up can0` |
 | IK adaptor running | `curl -s http://localhost:5200/ws/arm` | Start `openarm-ik-ros2-adaptor` first |
 | Python packages | `python3 -c "import numpy, yaml, websockets"` | `pip install numpy pyyaml websockets` |

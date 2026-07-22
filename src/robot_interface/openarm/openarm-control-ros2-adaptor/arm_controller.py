@@ -173,8 +173,10 @@ def _clamp_joint_deltas(
     return left_deg, right_deg, prev.get("left_gripper"), prev.get("right_gripper")
 
 
-def _apply_joints(follower, left_deg, right_deg, left_grip_deg, right_grip_deg, cfg: dict) -> None:
-    follower_obs = follower.get_observation()
+def _apply_joints(follower, left_deg, right_deg, left_grip_deg, right_grip_deg, cfg: dict,
+                  follower_obs: dict | None = None) -> None:
+    if follower_obs is None:
+        follower_obs = follower.get_observation()
     gravity = _compute_gravity(follower, follower_obs)
 
     for i, motor in enumerate(follower.bus_right.motors):
@@ -267,7 +269,8 @@ def _stop_publisher(proc: subprocess.Popen | None) -> None:
         pass
 
 
-async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
+async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True,
+              external_publisher: bool = False) -> None:
     can_left = cfg.get("can_left", "can0")
     can_right = cfg.get("can_right", "can1")
     can_iface = cfg.get("can_interface", "socketcan")
@@ -286,6 +289,7 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
 
     follower = None
     publisher_proc = None
+    state_pub = None  # in-process joint-state publisher (default)
     try:
         # 1. Connect + calibrate
         follower_config = OpenArmsFollowerConfig(
@@ -364,9 +368,46 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
         async with websockets.connect(ws_uri) as ws:
             print("Connected! Ctrl+C to stop.\n")
 
-            # Start ROS2 publisher in background
-            if start_publisher:
-                publisher_proc = _start_publisher(sys.executable, str(Path(__file__).resolve().parent / "config"))
+            # Start joint-state publishing. Default: in-process publisher
+            # (single CAN socket owner — no stale-frame backlog). The legacy
+            # arm_state_publisher.py subprocess stays as rollback via
+            # --external-publisher; the two never run at the same time.
+            if start_publisher and not external_publisher:
+                try:
+                    from joint_state_publisher import ArmJointStatePublisher
+                    state_pub = ArmJointStatePublisher(cfg)
+                    state_pub.start()
+                    print("  [publisher] In-process joint-state publisher started")
+                except Exception as e:
+                    print(f"  [publisher] In-process unavailable ({e}) — falling back to subprocess")
+                    state_pub = None
+                    publisher_proc = _start_publisher(
+                        sys.executable, str(Path(__file__).resolve().parent / "config"))
+            elif start_publisher and external_publisher:
+                publisher_proc = _start_publisher(
+                    sys.executable, str(Path(__file__).resolve().parent / "config"))
+
+            pub_err = {"n": 0, "last": 0.0}
+
+            def _publish_state(obs: dict) -> None:
+                """Best-effort joint-state publish, stamped at call time.
+
+                Observability must never stop the arm: any failure on this
+                path is logged (throttled) and the control loop continues.
+                Silence instead of exceptions is caught by the collector's
+                stream tracker (state stream goes stale/absent).
+                """
+                if state_pub is None:
+                    return
+                try:
+                    state_pub.publish(obs, state_pub.stamp_now())
+                except Exception as e:
+                    pub_err["n"] += 1
+                    now_m = time.monotonic()
+                    if now_m - pub_err["last"] >= 5.0:
+                        print(f"  [publisher] publish failed x{pub_err['n']} "
+                              f"({type(e).__name__}: {e}) — continuing")
+                        pub_err["last"] = now_m
 
             count = 0
             t0 = time.perf_counter()
@@ -418,6 +459,7 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
 
                         frac = min(1.0, (now - timeout_start) / return_home_s)
                         follower_obs = follower.get_observation()
+                        _publish_state(follower_obs)
                         gravity = _compute_gravity(follower, follower_obs)
 
                         for side, bus in [("right", follower.bus_right), ("left", follower.bus_left)]:
@@ -447,8 +489,13 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
                             prev_cmd, cfg,
                         )
                         # Send MIT impedance commands to CAN bus motors
-                        # Uses position + velocity + torque feed-forward (gravity comp)
-                        _apply_joints(follower, left_deg, right_deg, left_grip, right_grip, cfg)
+                        # Uses position + velocity + torque feed-forward (gravity comp).
+                        # One observation read per cycle — published immediately
+                        # (stamp ≈ read time), then reused for gravity comp.
+                        follower_obs = follower.get_observation()
+                        _publish_state(follower_obs)
+                        _apply_joints(follower, left_deg, right_deg, left_grip, right_grip, cfg,
+                                      follower_obs=follower_obs)
 
                     count += 1
                     now = time.perf_counter()
@@ -470,7 +517,12 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
     except ConnectionClosed:
         print("\nWebSocket connection closed by server.")
     finally:
-        # Stop publisher first (before arm moves — it needs the CAN bus)
+        # Stop publishers first (before arm moves — they need the CAN bus)
+        if state_pub is not None:
+            try:
+                state_pub.stop()
+            except Exception:
+                pass
         _stop_publisher(publisher_proc)
 
         if follower is not None:
@@ -494,6 +546,9 @@ def main() -> None:
     parser.add_argument("--config-dir", default="config", help="Config directory path")
     parser.add_argument("--ws-uri", default=None, help="WebSocket URI (default: from robot.yaml)")
     parser.add_argument("--no-publisher", action="store_true", help="Skip starting arm_state_publisher")
+    parser.add_argument("--external-publisher", action="store_true",
+                        help="Use the legacy arm_state_publisher.py subprocess instead of the "
+                             "in-process publisher (rollback path)")
     args = parser.parse_args()
 
     config_dir = Path(args.config_dir)
@@ -506,7 +561,8 @@ def main() -> None:
     # Suppress the noisy asyncio traceback on Ctrl+C — the cleanup in run()'s
     # finally block handles everything (return home, disable torque, disconnect).
     try:
-        asyncio.run(run(cfg, ws_uri, start_publisher=not args.no_publisher))
+        asyncio.run(run(cfg, ws_uri, start_publisher=not args.no_publisher,
+                        external_publisher=args.external_publisher))
     except KeyboardInterrupt:
         pass
     print("")
