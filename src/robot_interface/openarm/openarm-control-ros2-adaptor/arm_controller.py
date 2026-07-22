@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -251,6 +252,8 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
 
     follower = None
     state_pub = None  # in-process joint-state publisher
+    gravity_stop = None  # set to stop the background gravity thread
+    gravity_thread = None
     try:
         # 1. Connect + calibrate
         follower_config = OpenArmsFollowerConfig(
@@ -379,6 +382,32 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
             # no separate read round in the steady-state loop.
             last_obs: dict | None = None
 
+            # Gravity feed-forward runs in a background thread at a slow rate:
+            # pinocchio RNE over 14 joints every 33 ms cycle is wasted work on
+            # a slowly-varying quantity. The loop reads the cached snapshot
+            # under a lock; the worker recomputes on a COPY of the latest obs.
+            gravity_hz = float(cfg.get("gravity_hz", 5.0))
+            gravity_lock = threading.Lock()
+            gravity_cache: dict = {
+                "torque": _compute_gravity(follower, follower.get_observation())}
+            gravity_stop = threading.Event()
+
+            def _gravity_worker() -> None:
+                while not gravity_stop.is_set():
+                    obs = last_obs
+                    if obs is not None:
+                        try:
+                            torques = _compute_gravity(follower, dict(obs))
+                            with gravity_lock:
+                                gravity_cache["torque"] = torques
+                        except Exception:
+                            pass  # keep last good snapshot
+                    gravity_stop.wait(1.0 / gravity_hz)
+
+            gravity_thread = threading.Thread(
+                target=_gravity_worker, daemon=True, name="gravity-comp")
+            gravity_thread.start()
+
             # Background task that continuously reads WebSocket messages
             # and updates the shared 'latest' dict with the newest joint commands.
             # This runs concurrently with the motor control loop — the reader
@@ -420,7 +449,8 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
                         frac = min(1.0, (now - timeout_start) / return_home_s)
                         follower_obs = follower.get_observation()
                         _publish_state(follower_obs)
-                        gravity = _compute_gravity(follower, follower_obs)
+                        with gravity_lock:
+                            gravity = gravity_cache["torque"]
 
                         for side, bus in [("right", follower.bus_right), ("left", follower.bus_left)]:
                             for motor in bus.motors:
@@ -456,7 +486,8 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
                         # joint state and feed publishing + the next gravity pass.
                         if last_obs is None:
                             last_obs = follower.get_observation()
-                        gravity = _compute_gravity(follower, last_obs)
+                        with gravity_lock:
+                            gravity = gravity_cache["torque"]
                         for key, st in _apply_joints(
                                 follower, left_deg, right_deg, left_grip, right_grip,
                                 cfg, gravity).items():
@@ -485,11 +516,21 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
     except ConnectionClosed:
         print("\nWebSocket connection closed by server.")
     finally:
-        # Stop the publisher first (before arm moves — it needs the CAN bus)
+        # Stop background workers first — they touch the CAN bus / ROS graph
+        # and must be quiet before the arm moves home and disconnects.
+        # Every step tolerates a second Ctrl+C arriving mid-cleanup
+        # (KeyboardInterrupt is BaseException, not Exception).
+        if gravity_stop is not None:
+            gravity_stop.set()
+        if gravity_thread is not None:
+            try:
+                gravity_thread.join(timeout=2.0)  # daemon thread: dies with process regardless
+            except (Exception, KeyboardInterrupt):
+                pass
         if state_pub is not None:
             try:
                 state_pub.stop()
-            except Exception:
+            except (Exception, KeyboardInterrupt):
                 pass
 
         if follower is not None:
