@@ -59,7 +59,9 @@ def test_per_stream_sample_rate(tmp_path):
     path = writer.close_episode(task_completed=True, termination_reason="goal_reached")
     with h5py.File(path, "r") as f:
         assert abs(f["s"].attrs["sample_rate"] - 10.0) < 1e-9
-        assert "sample_rate" not in f.attrs
+        # Root sample_rate is the episode-level best guess (0.0 = not provided);
+        # per-stream attrs remain the measured rates.
+        assert f.attrs["sample_rate"] == 0.0
 
 
 def test_task_root_attrs(tmp_path):

@@ -82,7 +82,8 @@ class AirsHdf5Writer:
         self._streams = {}
 
     def close_episode(self, *, task_completed: bool,
-                      termination_reason: str) -> str:
+                      termination_reason: str,
+                      sample_rate: float | None = None) -> str:
         """Close the open episode. Freshly closed episodes are valid;
         recording_valid is stamped False only by stamp_recording_invalid."""
         if self._file is None:
@@ -106,6 +107,7 @@ class AirsHdf5Writer:
         self._file.attrs["robot_type"] = self._robot_type
         self._file.attrs["series_number"] = self._series_number
         self._file.attrs["frames"] = total_frames
+        self._file.attrs["sample_rate"] = float(sample_rate) if sample_rate is not None else 0.0
         self._file.attrs["task_completed"] = bool(task_completed)
         self._file.attrs["recording_valid"] = True
         self._file.attrs["termination_reason"] = termination_reason

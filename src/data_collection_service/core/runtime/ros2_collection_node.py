@@ -107,6 +107,7 @@ class PlatformCollectionNode(Node):
             path = self._writer.close_episode(
                 task_completed=task_completed,
                 termination_reason=reason,
+                sample_rate=self._compute_sample_rate(),
             )
             self._last_episode_path = path
             self.get_logger().info(
@@ -290,6 +291,26 @@ class PlatformCollectionNode(Node):
             self.get_logger().warn(f"manual UI failed to start: {exc}")
 
     # -- helpers --
+
+    def _compute_sample_rate(self) -> float:
+        """Best-guess episode sample rate from image streams.
+
+        Falls back to 0.0 if no image-stream rate is available yet.
+        """
+        image_streams = [
+            name for name, s in self._config.streams
+            if s.message_type == "sensor_msgs/Image"
+        ]
+        if not image_streams or self._stream_tracker is None:
+            return 0.0
+        snap = self._stream_tracker.snapshot()
+        rates = [
+            metrics.observed_rate_hz
+            for name in image_streams
+            if (metrics := snap.get(name, (None, None))[1]) is not None
+            and metrics.observed_rate_hz is not None
+        ]
+        return float(rates[0]) if rates else 0.0
 
     def shutdown(self) -> None:
         if self._zenoh_channel is not None:

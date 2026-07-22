@@ -6,7 +6,7 @@ from __future__ import annotations
 
 Publishes JPEG-encoded Image + CameraInfo per camera matching the
 AIRSPEED sensor_interface convention. Streams at native camera rate
-via a background thread — no artificial rate cap.
+via one background reader thread per camera — no artificial rate cap.
 
 Stream types (color, depth, infra) are enabled per-camera in config/camera.yaml.
 Unavailable stream types configured for a camera are warned in the console.
@@ -103,6 +103,8 @@ class _ZenohImageChannel:
         self._session = zenoh.open(conf)
         self._pubs: Dict[str, object] = {}
         self._seq = 0
+        # Serializes sends from the per-camera reader threads.
+        self._lock = threading.Lock()
 
     def _publisher(self, key: str):
         if key not in self._pubs:
@@ -112,9 +114,10 @@ class _ZenohImageChannel:
     def send(self, key: str, *, ts_ns: int, width: int, height: int,
              encoding: str, payload: bytes) -> None:
         enc = encoding.encode()
-        header = _ENVELOPE.pack(ts_ns, self._seq, width, height, len(enc))
-        self._seq += 1
-        self._publisher(key).put(header + enc + payload)
+        with self._lock:
+            header = _ENVELOPE.pack(ts_ns, self._seq, width, height, len(enc))
+            self._seq += 1
+            self._publisher(key).put(header + enc + payload)
 
     def close(self) -> None:
         self._session.close()
@@ -157,35 +160,64 @@ def _discover_and_connect(cfg: Dict) -> List[Tuple[str, str, Dict, object]]:
     for i, info in enumerate(found[:max_cameras]):
         print(f"        [{i}] {info.get('name', 'Unknown')}  SN={info.get('id', 'unknown')}")
 
-    # Map config keys to discovery indices
-    config_keys = list(cameras_cfg.keys())
+    # Match discovered cameras to config entries by SN (not by index)
     connected: List[Tuple[str, str, Dict, object]] = []
+    used_keys: set[str] = set()
 
-    for idx, info in enumerate(found[:max_cameras]):
-        if idx >= len(config_keys):
-            print(f"      [{idx}] no config entry — skipping")
-            continue
-
-        cam_key = config_keys[idx]
-        entry = cameras_cfg[cam_key]
+    for info in found[:max_cameras]:
         sn = info.get("id", "")
-        cfg_sn = entry.get("serial", "auto")
+        cam_key: str | None = None
+        entry: Dict | None = None
 
-        if cfg_sn != "auto" and cfg_sn != sn:
-            print(f"      [{idx}] serial mismatch (config={cfg_sn}, found={sn}) — skipping")
+        # 1) Exact SN match
+        for ck, ce in cameras_cfg.items():
+            if ck in used_keys:
+                continue
+            cfg_sn = ce.get("serial", "auto")
+            if cfg_sn != "auto" and cfg_sn == sn:
+                cam_key = ck
+                entry = ce
+                break
+
+        # 2) Fallback to first unused "auto" entry
+        if cam_key is None:
+            for ck, ce in cameras_cfg.items():
+                if ck in used_keys:
+                    continue
+                if ce.get("serial", "auto") == "auto":
+                    cam_key = ck
+                    entry = ce
+                    break
+
+        if cam_key is None:
+            print(f"      [SN={sn}] no matching config entry — skipping")
             continue
 
+        used_keys.add(cam_key)
         topic = entry.get("topic", f"/camera/{cam_key}")
         frame_id = entry.get("frame_id", f"camera_{cam_key}_optical_frame")
 
         try:
-            cam_cfg = RealSenseCameraConfig(serial_number_or_name=sn)
+            # Honor the color stream's fps/width/height from camera.yaml —
+            # RealSenseCameraConfig requires all three or none; without them
+            # the camera silently falls back to its native profile (e.g. D405
+            # streams 848x480 instead of the configured 640x480).
+            color_cfg = entry.get("streams", {}).get("color", {})
+            w = color_cfg.get("width")
+            h = color_cfg.get("height")
+            fps = color_cfg.get("fps")
+            if w and h and fps:
+                cam_cfg = RealSenseCameraConfig(
+                    serial_number_or_name=sn, fps=fps, width=w, height=h,
+                )
+            else:
+                cam_cfg = RealSenseCameraConfig(serial_number_or_name=sn)
             cam = RealSenseCamera(cam_cfg)
             cam.connect()
             connected.append((cam_key, topic, entry, cam))
-            print(f"        {cam_key} → {topic}  connected")
+            print(f"        {cam_key} (SN={sn}) → {topic}  connected")
         except Exception as e:
-            print(f"        {cam_key} → {topic}  FAILED: {e}")
+            print(f"        {cam_key} (SN={sn}) → {topic}  FAILED: {e}")
             continue
 
         # Warn about unavailable stream types
@@ -195,10 +227,9 @@ def _discover_and_connect(cfg: Dict) -> List[Tuple[str, str, Dict, object]]:
                 print(f"          [WARN] {stype}: requires pyrealsense2 direct access, not yet supported")
 
     # Warn about config entries that couldn't be matched
-    connected_keys = {c[0] for c in connected}
-    for cam_key in config_keys:
-        if cam_key not in connected_keys:
-            print(f"      [WARN] {cam_key}: configured but not connected")
+    for ck in cameras_cfg:
+        if ck not in used_keys:
+            print(f"      [WARN] {ck}: configured but not connected")
 
     return connected
 
@@ -273,9 +304,10 @@ class CameraPublisherNode(Node):
                 s["info_pub"].publish(ci)
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._threads: List[threading.Thread] = []
         self._counts: Dict[str, int] = {}
         self._last_print = time.monotonic()
+        self._log_lock = threading.Lock()
 
         # Raw frames travel over the zenoh side channel (rclpy is too slow for
         # ~1 MB messages); JPEG frames and CameraInfo stay on ROS2 topics.
@@ -291,30 +323,44 @@ class CameraPublisherNode(Node):
 
     def start(self) -> None:
         self._running = True
-        self._thread = threading.Thread(target=self._stream_loop, daemon=True, name="camera-stream")
-        self._thread.start()
+        # One reader thread per camera. RealSenseCamera.read() blocks until the
+        # camera's NEXT fresh frame, so a single shared loop couples every
+        # camera to the slowest phase alignment — a near-miss on one camera
+        # slips ALL cameras by a full frame period (the observed 30↔15 Hz
+        # lockstep drop). Independent threads let each camera publish at its
+        # own native rate.
+        per_camera: Dict[str, List[Dict]] = {}
+        for s in self._streams:
+            per_camera.setdefault(s["cam_key"], []).append(s)
+        self._threads = [
+            threading.Thread(
+                target=self._stream_loop, args=(streams,),
+                daemon=True, name=f"camera-stream-{cam_key}",
+            )
+            for cam_key, streams in per_camera.items()
+        ]
+        for t in self._threads:
+            t.start()
 
     def stop(self) -> None:
         self._running = False
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
+        for t in self._threads:
+            t.join(timeout=2.0)
         if self._channel is not None:
             self._channel.close()
 
-    def _stream_loop(self) -> None:
-        """Run in background thread at camera native rate.
+    def _stream_loop(self, streams: List[Dict]) -> None:
+        """Run in a per-camera background thread at that camera's native rate.
 
-        No create_timer() cap — each camera delivers frames at its hardware rate.
+        No create_timer() cap — the camera delivers frames at its hardware rate.
         Single color stream: ~30 Hz. Multi-stream (depth+IR+color): ~15 Hz (USB 3.2 limit).
-        Each iteration reads ALL cameras before looping, so cameras are sampled in lockstep
-        within a single frameset (~5 ms timeout between cameras).
         """
         while self._running:
             if not _HAS_CV2:
                 time.sleep(0.1)
                 continue
 
-            for s in self._streams:
+            for s in streams:
                 try:
                     frame = s["cam"].read()
                     if frame is None or frame.size == 0:
@@ -377,14 +423,17 @@ class CameraPublisherNode(Node):
             self._maybe_log()
 
     def _maybe_log(self) -> None:
-        now = time.monotonic()
-        if now - self._last_print >= 10.0:
-            total = sum(self._counts.values())
-            rate = total / (now - self._last_print)
-            parts = ", ".join(f"{k}={self._counts.get(k,0)}" for k in sorted(self._counts))
-            self.get_logger().info(f"Frames: {rate:.1f} Hz ({total} total) | {parts}")
-            self._counts.clear()
-            self._last_print = now
+        # Called from every per-camera thread; serialize so the aggregate
+        # rate print and counter reset happen once per window.
+        with self._log_lock:
+            now = time.monotonic()
+            if now - self._last_print >= 10.0:
+                total = sum(self._counts.values())
+                rate = total / (now - self._last_print)
+                parts = ", ".join(f"{k}={self._counts.get(k,0)}" for k in sorted(self._counts))
+                self.get_logger().info(f"Frames: {rate:.1f} Hz ({total} total) | {parts}")
+                self._counts.clear()
+                self._last_print = now
 
 
 # ---------------------------------------------------------------------------
