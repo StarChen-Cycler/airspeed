@@ -85,6 +85,12 @@ Edit `config/robot.yaml`: CAN bus ports, joint names, Kp/Kd gains, publish rate,
 safety clamps, URDF path for gravity compensation, WebSocket URI.
 Home positions are in `../robot_shared.yaml` — shared with the IK adaptor.
 
+Gains are validated at startup against the Damiao MIT wire ranges (kp 0–500,
+kd 0–5) and are currently **frozen**: J1–J4 kp 90 max, J6 kp 36 — kp 120
+oscillated under load (2026-07-22 incident). Do not raise kp without
+reviewing the incident; see the latency-recovery notes in
+`.memo/memodocs/latency_recovery_control_pipeline_20260722.md`.
+
 ## Session YAML
 
 ```yaml
