@@ -1,18 +1,15 @@
 """In-process /arm/{left,right}/joint_state publisher for arm_controller.
 
-Replaces the arm_state_publisher.py subprocess: the controller already reads
-fresh motor states every control cycle for gravity compensation, so joint
-state is published from the same process with stamps taken at observation
-read time. This eliminates the second SocketCAN owner on can0/can1 whose
-saturated kernel RX buffer caused stale motor positions to be published
-with fresh timestamps (the dominant cmd→state lag artifact).
+The controller reads fresh motor states every control cycle for gravity
+compensation, so joint state is published from the same process with stamps
+taken at observation read time. Single SocketCAN owner on can0/can1 — a
+second reader's unfiltered socket would saturate its kernel RX buffer and
+publish stale positions with fresh timestamps (the cmd→state lag artifact
+this design eliminated).
 
-Topic contract is identical to arm_state_publisher.py: same topics, message
-type, QoS, joint names (from robot.yaml), and ROS graph node name — so any
-start order of the independent interfaces keeps working. velocity[] and
-effort[] are filled from the same observation (the MIT status frame carries
-both) for live debugging; the collector's session YAML still records only
-position — no recording-schema change.
+velocity[] and effort[] are filled from the same observation (the MIT status
+frame carries both) for live debugging; the collector's session YAML still
+records only position — no recording-schema change.
 """
 
 from __future__ import annotations
@@ -30,7 +27,8 @@ from rclpy.qos import (
 )
 from sensor_msgs.msg import JointState
 
-# Identical to arm_state_publisher.py — the topic contract is unchanged.
+# Topic contract: BEST_EFFORT / VOLATILE / KEEP_LAST 1 (unchanged from the
+# retired standalone publisher — subscribers see no difference).
 _QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,

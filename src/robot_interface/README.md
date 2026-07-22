@@ -192,10 +192,10 @@ Header-less messages are rejected at the collector: there is no `ros_receive`
 fallback, so every stream must carry a header.
 
 The bundled OpenArm adaptors stamp at creation time so `ros_header` stays meaningful
-end to end: `arm_state_publisher` stamps right after the CAN-bus read (≈ encoder sample
-time), and the IK command publisher stamps at solver handoff — the instant a solution
-is produced, shared by all four command topics — rather than when the publish loop
-gets around to sending it.
+end to end: the arm controller stamps joint state right after the CAN-bus read
+(≈ encoder sample time), and the IK command publisher stamps at solver handoff —
+the instant a solution is produced, shared by all four command topics — rather
+than when the publish loop gets around to sending it.
 
 ## Topic Naming Convention
 

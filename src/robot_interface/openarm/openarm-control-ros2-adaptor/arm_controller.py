@@ -14,8 +14,6 @@ import argparse
 import asyncio
 import json
 import os
-import signal
-import subprocess
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -225,52 +223,7 @@ def _get_kd(cfg: dict, motor: str) -> float:
 # Main
 # ---------------------------------------------------------------------------
 
-def _start_publisher(python_bin: str, config_dir: str) -> subprocess.Popen | None:
-    """Spawn arm_state_publisher.py as a subprocess. Returns None on failure."""
-    publisher_script = Path(__file__).resolve().parent / "arm_state_publisher.py"
-    if not publisher_script.exists():
-        print("  [publisher] arm_state_publisher.py not found — skipping")
-        return None
-    try:
-        proc = subprocess.Popen(
-            [python_bin, str(publisher_script), "--config-dir", config_dir],
-            stdout=sys.stdout, stderr=sys.stderr,
-            stdin=subprocess.DEVNULL,
-            preexec_fn=os.setsid,  # isolate in its own process group
-        )
-        print(f"  [publisher] Started (PID={proc.pid})")
-        return proc
-    except Exception as e:
-        print(f"  [publisher] Failed to start: {e}")
-        return None
-
-
-def _stop_publisher(proc: subprocess.Popen | None) -> None:
-    """Gracefully stop the publisher subprocess.
-
-    Handles KeyboardInterrupt internally — the user may press Ctrl+C again
-    while we're waiting for the publisher to shutdown. In that case, kill
-    immediately and move on.
-    """
-    if proc is None or proc.poll() is not None:
-        return
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGINT)
-        try:
-            proc.wait(timeout=3)  # shorter timeout for cleaner shutdown
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=1)
-        except KeyboardInterrupt:
-            proc.kill()  # user pressed Ctrl+C again — force kill
-            proc.wait(timeout=1)
-        print("  [publisher] Stopped")
-    except (ProcessLookupError, OSError, KeyboardInterrupt):
-        pass
-
-
-async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True,
-              external_publisher: bool = False) -> None:
+async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
     can_left = cfg.get("can_left", "can0")
     can_right = cfg.get("can_right", "can1")
     can_iface = cfg.get("can_interface", "socketcan")
@@ -288,8 +241,7 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True,
     print(f"  FPS: {fps}")
 
     follower = None
-    publisher_proc = None
-    state_pub = None  # in-process joint-state publisher (default)
+    state_pub = None  # in-process joint-state publisher
     try:
         # 1. Connect + calibrate
         follower_config = OpenArmsFollowerConfig(
@@ -368,24 +320,19 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True,
         async with websockets.connect(ws_uri) as ws:
             print("Connected! Ctrl+C to stop.\n")
 
-            # Start joint-state publishing. Default: in-process publisher
-            # (single CAN socket owner — no stale-frame backlog). The legacy
-            # arm_state_publisher.py subprocess stays as rollback via
-            # --external-publisher; the two never run at the same time.
-            if start_publisher and not external_publisher:
+            # Start joint-state publishing (in-process: single CAN socket
+            # owner — no stale-frame backlog). If it cannot start (e.g. ROS2
+            # not sourced), continue without publishing rather than risking
+            # the control loop.
+            if start_publisher:
                 try:
                     from joint_state_publisher import ArmJointStatePublisher
                     state_pub = ArmJointStatePublisher(cfg)
                     state_pub.start()
                     print("  [publisher] In-process joint-state publisher started")
                 except Exception as e:
-                    print(f"  [publisher] In-process unavailable ({e}) — falling back to subprocess")
+                    print(f"  [publisher] Unavailable ({e}) — continuing without state publishing")
                     state_pub = None
-                    publisher_proc = _start_publisher(
-                        sys.executable, str(Path(__file__).resolve().parent / "config"))
-            elif start_publisher and external_publisher:
-                publisher_proc = _start_publisher(
-                    sys.executable, str(Path(__file__).resolve().parent / "config"))
 
             pub_err = {"n": 0, "last": 0.0}
 
@@ -517,13 +464,12 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True,
     except ConnectionClosed:
         print("\nWebSocket connection closed by server.")
     finally:
-        # Stop publishers first (before arm moves — they need the CAN bus)
+        # Stop the publisher first (before arm moves — it needs the CAN bus)
         if state_pub is not None:
             try:
                 state_pub.stop()
             except Exception:
                 pass
-        _stop_publisher(publisher_proc)
 
         if follower is not None:
             print("\nReturning to home (3s)...")
@@ -545,10 +491,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="WS Follower Arm Controller")
     parser.add_argument("--config-dir", default="config", help="Config directory path")
     parser.add_argument("--ws-uri", default=None, help="WebSocket URI (default: from robot.yaml)")
-    parser.add_argument("--no-publisher", action="store_true", help="Skip starting arm_state_publisher")
-    parser.add_argument("--external-publisher", action="store_true",
-                        help="Use the legacy arm_state_publisher.py subprocess instead of the "
-                             "in-process publisher (rollback path)")
+    parser.add_argument("--no-publisher", action="store_true",
+                        help="Disable joint-state publishing")
     args = parser.parse_args()
 
     config_dir = Path(args.config_dir)
@@ -561,8 +505,7 @@ def main() -> None:
     # Suppress the noisy asyncio traceback on Ctrl+C — the cleanup in run()'s
     # finally block handles everything (return home, disable torque, disconnect).
     try:
-        asyncio.run(run(cfg, ws_uri, start_publisher=not args.no_publisher,
-                        external_publisher=args.external_publisher))
+        asyncio.run(run(cfg, ws_uri, start_publisher=not args.no_publisher))
     except KeyboardInterrupt:
         pass
     print("")

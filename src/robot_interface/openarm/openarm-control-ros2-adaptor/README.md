@@ -7,9 +7,8 @@ Deploy independently of camera streams.
 
 | Script | Role | ROS2 required? |
 |--------|------|---------------|
-| `arm_controller.py` | Receives IK commands via WebSocket → drives motors; publishes `JointState` **in-process** from its own observation reads (default) | Yes (for state publishing) |
+| `arm_controller.py` | Receives IK commands via WebSocket → drives motors; publishes `JointState` **in-process** from its own observation reads | Yes (for state publishing) |
 | `joint_state_publisher.py` | In-process `JointState` publisher used by `arm_controller.py` | Yes |
-| `arm_state_publisher.py` | Legacy standalone publisher (rollback only, `--external-publisher`) | Yes |
 
 ## Published ROS2 Topics
 
@@ -43,24 +42,9 @@ bash launch/start.sh
 Calibrates, homes, waits for ENTER, then streams motor commands and publishes
 `JointState` to ROS2.
 
-**Rollback — legacy external publisher** (spawns `arm_state_publisher.py` as
-a subprocess, mutually exclusive with the in-process one):
-
-```bash
-python3 arm_controller.py --external-publisher
-```
-
-If the in-process publisher fails to start (e.g. ROS2 environment not
-sourced), the controller logs a warning and falls back to the legacy
-subprocess automatically. `--no-publisher` disables state publishing.
-
-**Standalone — Arm state publisher (legacy):**
-
-```bash
-cd openarm-control-ros2-adaptor
-source /opt/ros/humble/setup.bash
-python3 arm_state_publisher.py
-```
+If the in-process publisher cannot start (e.g. ROS2 environment not sourced),
+the controller logs a warning and continues without state publishing;
+`--no-publisher` disables publishing explicitly.
 
 **Standalone — Arm controller** (requires IK adaptor running on port 5200):
 

@@ -4,7 +4,7 @@
 # Runs the arm controller in the foreground. The controller handles:
 #   - Calibration, homing, gripper test
 #   - WebSocket streaming
-#   - Starting/stopping the ROS2 arm_state_publisher
+#   - In-process ROS2 joint-state publishing (single CAN socket owner)
 #   - Graceful shutdown (home return → disable torque → disconnect)
 #
 # Uses python3 from PATH — activate your env (conda/venv) before running.
