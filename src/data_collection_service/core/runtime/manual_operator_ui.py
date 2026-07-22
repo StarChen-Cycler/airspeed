@@ -16,18 +16,16 @@ import time as _time
 from typing import Any, Callable
 
 
-_PREVIEW_JPEG_QUALITY = 60
-
-
-def _encode_preview_jpeg(frame: tuple) -> bytes:
-    """Encode one cached frame to JPEG for the browser preview.
+def _encode_preview_frame(frame: tuple) -> tuple[bytes, str]:
+    """Encode one cached frame for the browser preview — no lossy compression.
 
     frame: (data, encoding, width, height, ts_ns). jpeg payloads pass through
-    unchanged; raw pixel encodings are encoded with PIL at preview quality.
+    unchanged (already compressed at source); raw pixel encodings are wrapped
+    as uncompressed BMP so the preview is pixel-exact. Returns (payload, mime).
     """
     data, encoding, width, height, _ts_ns = frame
     if encoding == "jpeg":
-        return data
+        return data, "image/jpeg"
     if not width or not height or width <= 0 or height <= 0:
         raise ValueError(f"raw frame without valid dims: {width}x{height}")
     from PIL import Image
@@ -38,8 +36,8 @@ def _encode_preview_jpeg(frame: tuple) -> bytes:
     else:
         raise ValueError(f"unsupported preview encoding: {encoding!r}")
     buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=_PREVIEW_JPEG_QUALITY)
-    return buf.getvalue()
+    img.save(buf, "BMP")
+    return buf.getvalue(), "image/bmp"
 
 
 def build_image_stream_info(image_streams, latest_frames, tracker_snapshot):
@@ -92,7 +90,7 @@ class ManualOperatorUI:
         self._latest_frames = latest_frames if latest_frames is not None else {}
         # Guards latest_frames reads and the per-(stream, ts) preview memo.
         self._frames_lock = frames_lock or threading.Lock()
-        self._preview_jpeg: dict[str, tuple[int, bytes | None]] = {}
+        self._preview_memo: dict[str, tuple[int, tuple[bytes, str] | None]] = {}
         self._server: HTTPServer | None = None
         self._active_task: str | None = None
         self._task_target: int = 0
@@ -103,23 +101,23 @@ class ManualOperatorUI:
 
     # -- image preview --
 
-    def _memoized_preview(self, name: str, frame: tuple) -> bytes | None:
-        """Preview JPEG for frame (data, encoding, w, h, ts_ns).
+    def _memoized_preview(self, name: str, frame: tuple) -> tuple[bytes, str] | None:
+        """Preview payload (bytes, mime) for frame (data, encoding, w, h, ts_ns).
 
         Encoded once per (stream, ts) and shared by all clients — N viewers
-        cost one PIL encode, not N. Encode happens outside the lock; a
+        cost one encode, not N. Encode happens outside the lock; a
         duplicate concurrent encode is idempotent (last writer wins).
         """
         ts = frame[4]
-        memo = self._preview_jpeg.get(name)
+        memo = self._preview_memo.get(name)
         if memo is None or memo[0] != ts:
             try:
-                jpeg: bytes | None = _encode_preview_jpeg(frame)
+                payload: tuple[bytes, str] | None = _encode_preview_frame(frame)
             except Exception:
-                jpeg = None
-            memo = (ts, jpeg)
+                payload = None
+            memo = (ts, payload)
             with self._frames_lock:
-                self._preview_jpeg[name] = memo
+                self._preview_memo[name] = memo
         return memo[1]
 
     # -- task management --
@@ -338,16 +336,17 @@ class ManualOperatorUI:
                         with ui._frames_lock:
                             frame = ui._latest_frames.get(name)
                         # Send only on frame change (≈ stream rate, capped at
-                        # ~10 fps); the JPEG is encoded once and shared across
+                        # ~10 fps); the payload is encoded once and shared across
                         # clients via _memoized_preview.
                         if frame is not None and frame[4] != last_ts:
                             last_ts = frame[4]
-                            jpeg = ui._memoized_preview(name, frame)
-                            if jpeg is not None:
+                            payload = ui._memoized_preview(name, frame)
+                            if payload is not None:
+                                data, mime = payload
                                 self.wfile.write(b"--frame\r\n")
-                                self.wfile.write(b"Content-Type: image/jpeg\r\n")
-                                self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
-                                self.wfile.write(jpeg)
+                                self.wfile.write(f"Content-Type: {mime}\r\n".encode())
+                                self.wfile.write(f"Content-Length: {len(data)}\r\n\r\n".encode())
+                                self.wfile.write(data)
                                 self.wfile.write(b"\r\n")
                                 self.wfile.flush()
                         _time.sleep(0.1)
@@ -506,6 +505,11 @@ tr:hover{background:#1c2128}
 <div id="task-info" class="task-info task-none">No task selected. Create or select one to start recording.</div>
 </div>
 
+<div class="card" id="cam-card" style="display:none">
+<div class="card-title">Camera Feeds</div>
+<div id="cam-grid" class="cam-grid"></div>
+</div>
+
 <div id="pending-banner" class="pending-banner"><span class="pending-banner-text">Episode recorded. Delete to discard, or start a new episode to keep it.</span><button class="btn-delete" onclick="act('delete')" id="btn-delete-pending">Delete Episode</button></div>
 
 <div class="row">
@@ -535,11 +539,6 @@ tr:hover{background:#1c2128}
 <div class="card">
 <div class="card-title">Stream Status</div>
 <div id="streams"><span style="color:#8b949e">Loading...</span></div>
-</div>
-
-<div class="card" id="cam-card" style="display:none">
-<div class="card-title">Camera Feeds</div>
-<div id="cam-grid" class="cam-grid"></div>
 </div>
 
 <div class="footer">Data Collection Service · single source of truth · real-time</div>

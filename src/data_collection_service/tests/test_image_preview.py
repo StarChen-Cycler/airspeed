@@ -7,7 +7,7 @@ import pytest
 
 from core.runtime.manual_operator_ui import (
     ManualOperatorUI,
-    _encode_preview_jpeg,
+    _encode_preview_frame,
     build_image_stream_info,
 )
 from core.runtime.stream_tracker import StreamMetrics, StreamStatus
@@ -15,28 +15,34 @@ from core.runtime.stream_tracker import StreamMetrics, StreamStatus
 
 def test_jpeg_passthrough_identical():
     jpeg = b"\xff\xd8fakejpegdata\xff\xd9"
-    assert _encode_preview_jpeg((jpeg, "jpeg", 4, 2, 1)) is jpeg
+    payload, mime = _encode_preview_frame((jpeg, "jpeg", 4, 2, 1))
+    assert payload is jpeg
+    assert mime == "image/jpeg"
 
 
-def test_raw_rgb8_encodes_to_valid_jpeg():
-    out = _encode_preview_jpeg((bytes(4 * 2 * 3), "rgb8", 4, 2, 1))
-    assert out[:2] == b"\xff\xd8"
+def test_raw_rgb8_encodes_to_uncompressed_bmp():
+    payload, mime = _encode_preview_frame((bytes(4 * 2 * 3), "rgb8", 4, 2, 1))
+    assert mime == "image/bmp"
+    assert payload[:2] == b"BM"
     from PIL import Image
-    img = Image.open(io.BytesIO(out))
+    img = Image.open(io.BytesIO(payload))
     assert img.size == (4, 2)
     assert img.mode == "RGB"
+    # BMP is uncompressed: payload is exactly the pixel data plus header.
+    assert len(payload) > 4 * 2 * 3
 
 
 def test_raw_mono8_encodes():
-    out = _encode_preview_jpeg((bytes(4 * 2), "mono8", 4, 2, 1))
-    assert out[:2] == b"\xff\xd8"
+    payload, mime = _encode_preview_frame((bytes(4 * 2), "mono8", 4, 2, 1))
+    assert mime == "image/bmp"
+    assert payload[:2] == b"BM"
 
 
 def test_bad_dims_and_unknown_encoding_raise():
     with pytest.raises(ValueError):
-        _encode_preview_jpeg((b"\x00" * 10, "rgb8", 0, 0, 1))
+        _encode_preview_frame((b"\x00" * 10, "rgb8", 0, 0, 1))
     with pytest.raises(ValueError, match="unsupported"):
-        _encode_preview_jpeg((b"\x00" * 10, "yuv422", 4, 2, 1))
+        _encode_preview_frame((b"\x00" * 10, "yuv422", 4, 2, 1))
 
 
 def test_build_image_stream_info():
@@ -74,7 +80,8 @@ def test_memoized_preview_encodes_once_per_frame():
     assert a is b  # second call served from the memo — no re-encode
     c = ui._memoized_preview("cam", (bytes(4 * 2 * 3), "rgb8", 4, 2, 222))
     assert c is not a
-    assert c[:2] == b"\xff\xd8"  # new ts → fresh encode
+    assert c[1] == "image/bmp"
+    assert c[0][:2] == b"BM"  # new ts → fresh encode
 
 
 def test_memoized_preview_memoizes_encode_failure():
