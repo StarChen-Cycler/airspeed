@@ -24,9 +24,13 @@ kp:
   # Tuned 2026-07-22, step 2 (step 1: J1-J4 60->90, wrist ~3x — validated:
   # tau J1-J4 80->35 ms, wrist 200->100 ms, J6 400->160 ms, no ringing).
   # J1-J4 90 -> 120 (damping ~0.71x of original — watch overshoot at brisk
-  # moves). Wrist ~1.5x with kd sqrt-scaled (damping preserved): J6 remains
-  # the weakest; if it still under-reaches at kp 36, the cause is mechanical,
-  # not gains. Next lever after this is velocity feed-forward, not more kp.
+  # moves). Wrist ~1.5x with kd sqrt-scaled (damping preserved).
+  #
+  # *** SAFETY FREEZE (2026-07-22) ***
+  # Current values ALREADY shake the arm on the unstable table mount.
+  # DO NOT raise kp further and DO NOT add velocity feed-forward — harmful
+  # movements on this mount. If shaking persists, REDUCE J1-J4 kp toward
+  # 90 and/or stabilize the table first.
   joint_1: 120.0
   joint_2: 120.0
   joint_3: 120.0
