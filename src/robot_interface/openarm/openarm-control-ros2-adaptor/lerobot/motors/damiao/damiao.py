@@ -48,6 +48,13 @@ logger = logging.getLogger(__name__)
 NameOrID = Union[str, int]
 Value = Union[int, float]
 
+# Damiao MIT wire-protocol gain ranges (12-bit encoding). kd cannot exceed
+# 5.0 on the wire — out-of-range values are clamped at encode time.
+# arm_controller validates its config against these at startup so a clamp
+# can never silently override the configuration file.
+MIT_KP_RANGE = (0.0, 500.0)
+MIT_KD_RANGE = (0.0, 5.0)
+
 
 class DamiaoMotorsBus(MotorsBusBase):
     """
@@ -419,8 +426,8 @@ class DamiaoMotorsBus(MotorsBusBase):
         pmax, vmax, tmax = MOTOR_LIMIT_PARAMS[motor_type]
         
         # Encode parameters
-        kp_uint = self._float_to_uint(kp, 0, 500, 12)
-        kd_uint = self._float_to_uint(kd, 0, 5, 12)
+        kp_uint = self._float_to_uint(kp, *MIT_KP_RANGE, 12)
+        kd_uint = self._float_to_uint(kd, *MIT_KD_RANGE, 12)
         q_uint = self._float_to_uint(position_rad, -pmax, pmax, 16)
         dq_uint = self._float_to_uint(velocity_rad_per_sec, -vmax, vmax, 12)
         tau_uint = self._float_to_uint(torque, -tmax, tmax, 12)
@@ -478,8 +485,8 @@ class DamiaoMotorsBus(MotorsBusBase):
             pmax, vmax, tmax = MOTOR_LIMIT_PARAMS[motor_type]
             
             # Encode parameters
-            kp_uint = self._float_to_uint(kp, 0, 500, 12)
-            kd_uint = self._float_to_uint(kd, 0, 5, 12)
+            kp_uint = self._float_to_uint(kp, *MIT_KP_RANGE, 12)
+            kd_uint = self._float_to_uint(kd, *MIT_KD_RANGE, 12)
             q_uint = self._float_to_uint(position_rad, -pmax, pmax, 16)
             dq_uint = self._float_to_uint(velocity_rad_per_sec, -vmax, vmax, 12)
             tau_uint = self._float_to_uint(torque, -tmax, tmax, 12)
@@ -781,8 +788,8 @@ class DamiaoMotorsBus(MotorsBusBase):
                 
                 # Get motor limits and encode parameters
                 pmax, vmax, tmax = MOTOR_LIMIT_PARAMS[motor_type]
-                kp_uint = self._float_to_uint(kp, 0, 500, 12)
-                kd_uint = self._float_to_uint(kd, 0, 5, 12)
+                kp_uint = self._float_to_uint(kp, *MIT_KP_RANGE, 12)
+                kd_uint = self._float_to_uint(kd, *MIT_KD_RANGE, 12)
                 q_uint = self._float_to_uint(position_rad, -pmax, pmax, 16)
                 dq_uint = self._float_to_uint(0, -vmax, vmax, 12)
                 tau_uint = self._float_to_uint(0, -tmax, tmax, 12)

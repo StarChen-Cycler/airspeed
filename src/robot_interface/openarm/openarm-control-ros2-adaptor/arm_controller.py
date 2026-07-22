@@ -229,11 +229,34 @@ def _get_kd(cfg: dict, motor: str) -> float:
     return kd.get(motor, 0.3)
 
 
+def _validate_gains(cfg: dict) -> None:
+    """Fail fast if configured gains exceed the Damiao MIT wire ranges.
+
+    The protocol packs kp into 0..500 and kd into 0..5 (12 bits); anything
+    beyond is clamped at encode time. Refuse to start instead of letting the
+    file say one thing while the wire carries another — the configuration is
+    the single source of truth for gains.
+    """
+    from lerobot.motors.damiao.damiao import MIT_KD_RANGE, MIT_KP_RANGE
+    bad = []
+    for motor, v in cfg.get("kp", {}).items():
+        if not MIT_KP_RANGE[0] <= float(v) <= MIT_KP_RANGE[1]:
+            bad.append(f"kp.{motor}={v} (allowed {MIT_KP_RANGE[0]}..{MIT_KP_RANGE[1]})")
+    for motor, v in cfg.get("kd", {}).items():
+        if not MIT_KD_RANGE[0] <= float(v) <= MIT_KD_RANGE[1]:
+            bad.append(f"kd.{motor}={v} (allowed {MIT_KD_RANGE[0]}..{MIT_KD_RANGE[1]})")
+    if bad:
+        raise ValueError(
+            "Gains outside the Damiao MIT protocol range — fix config/robot.yaml: "
+            + "; ".join(bad))
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
+    _validate_gains(cfg)
     can_left = cfg.get("can_left", "can0")
     can_right = cfg.get("can_right", "can1")
     can_iface = cfg.get("can_interface", "socketcan")
