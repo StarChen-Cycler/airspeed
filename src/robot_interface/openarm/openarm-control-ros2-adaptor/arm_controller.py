@@ -473,7 +473,7 @@ async def run(cfg: dict, ws_uri: str, *, start_publisher: bool = True) -> None:
                             last_obs = None  # force a fresh observation read
 
                         # Clamp per-joint deltas for safety — no joint can change
-                        # more than MAX_JOINT_DELTA_DEG per cycle (~90 deg/s at 30 Hz)
+                        # more than MAX_JOINT_DELTA_DEG per cycle (~90 deg/s effective)
                         left_deg, right_deg, left_grip, right_grip = _clamp_joint_deltas(
                             latest["left"], latest["right"],
                             latest.get("left_gripper_deg"), latest.get("right_gripper_deg"),

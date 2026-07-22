@@ -38,8 +38,10 @@ kd:
   joint_6: 1.2
   joint_7: 0.9
   gripper: 0.9
-arm_state_hz: 30
-max_joint_delta_deg: 3.0
+arm_state_hz: 50
+# Per-cycle slew clamp. At 50 Hz, 1.8 deg/cycle keeps the effective speed
+# limit at 90 deg/s (same envelope as 3.0 deg/cycle at 30 Hz).
+max_joint_delta_deg: 1.8
 max_gripper_delta_deg: 10.0
 stream_timeout_s: 0.5
 return_home_seconds: 3.0
