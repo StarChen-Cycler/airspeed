@@ -38,8 +38,8 @@ kp:
   joint_4: 90.0
   joint_5: 18.0
   joint_6: 36.0  # re-applied 2026-07-22: step-2 value (24->36) for loaded-wrist
-          # tracking; validated tau 160->120 ms, no oscillation on wrist.
-          # Other joints stay at the kp-90 safe operating point.
+                 # tracking; validated tau 160->120 ms, no oscillation on wrist.
+                 # Other joints stay at the kp-90 safe operating point.
   joint_7: 18.0
   gripper: 15.0
 kd:
