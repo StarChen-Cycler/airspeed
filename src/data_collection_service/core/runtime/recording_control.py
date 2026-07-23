@@ -80,7 +80,10 @@ class RecordingControlRouter:
         self, action: str, *, source: RecordingControlMode | str,
     ) -> RecordingControlResult:
         normalized_source = RecordingControlMode(source)
-        if normalized_source != self._mode:
+        # Service calls are always accepted as an operator override, even when the
+        # active control mode is device_binding or manual_ui (e.g. VR controller
+        # battery dies and the operator needs to delete the pending episode).
+        if normalized_source != self._mode and normalized_source != RecordingControlMode.SERVICE:
             return RecordingControlResult(
                 accepted=False,
                 message=(
@@ -145,10 +148,9 @@ class RecordingControlRouter:
 
     def _handle_toggle(self) -> RecordingControlResult:
         if self._state.is_recording:
-            # Stop: save episode, enter PENDING, record debounce timestamp
+            # Stop: _invoke("stop") saves the episode and enters PENDING.
             result = self._invoke("stop")
             if result.accepted:
-                self._pending_episode = True
                 self._last_toggle_stop_time = _time.time()
             return result
         else:
@@ -203,9 +205,11 @@ class RecordingControlRouter:
 
         if normalized == "stop":
             self._state.end_episode(task_completed=True, reason="goal_reached")
+            self._pending_episode = True
             return RecordingControlResult(accepted=True, action="stop", message="stopped")
         if normalized == "save":
             self._state.end_episode(task_completed=True, reason="goal_reached")
+            self._pending_episode = True
             return RecordingControlResult(accepted=True, action="save", message="saved")
         if normalized == "abort":
             # Episode is KEPT as a failure demo (task not completed, data valid).
