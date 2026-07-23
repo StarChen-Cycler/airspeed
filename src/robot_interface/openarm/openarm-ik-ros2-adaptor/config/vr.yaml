@@ -43,3 +43,4 @@ calibration:
   stale_timeout_s: 1.0
   pin_button: "B"
   start_button: "A"
+  auto_repin_on_reconnect: true

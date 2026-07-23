@@ -126,6 +126,8 @@ class VRNormalizer:
         self._prev_pin_pressed = False
         self._prev_start_pressed = False
         self._needs_pin = True  # B must be pressed before first A
+        self._was_calibrated = False  # True once B has been pressed (or auto-repinned)
+        self._last_connected = False  # Track VR data-store connection for reconnect detection
 
     def set_home_ee(self, home_ee: dict[str, jaxlie.SE3]) -> None:
         """Set the FK home end-effector poses (from IKService)."""
@@ -134,11 +136,22 @@ class VRNormalizer:
     def normalize(self, data_store: VRDataStore) -> NormalizedTarget:
         """Run the full normalization pipeline on latest VR data."""
         now = time.monotonic()
+        left_trigger = 0.0
+        right_trigger = 0.0
+
+        # Track connection state for reconnect detection before any early return.
+        was_connected = self._last_connected
+        self._last_connected = data_store.is_connected()
+        just_reconnected = (not was_connected) and self._last_connected
 
         # Check staleness — revert to WAITING if no VR data for > timeout
         if self.state != CalibrationState.WAITING:
             if (now - self._last_active_s) > self.config.calibration.stale_timeout_s:
-                self._reset()
+                soft = (
+                    self._was_calibrated
+                    and self.config.calibration.auto_repin_on_reconnect
+                )
+                self._reset(hard=not soft)
                 return NormalizedTarget(state=CalibrationState.WAITING,
                                         left_trigger=left_trigger, right_trigger=right_trigger)
 
@@ -164,6 +177,25 @@ class VRNormalizer:
             if _detect_button(bs, self.config.calibration.start_button):
                 start_pressed_now = True
 
+        # Auto-repin on reconnect: if we were disconnected and fresh data is back,
+        # re-pin the origin so the operator only needs to press A to resume.
+        # Treat currently-held buttons as already-pressed so a held A does not
+        # immediately activate on the reconnect frame.
+        if (
+            just_reconnected
+            and self.state == CalibrationState.WAITING
+            and self._was_calibrated
+            and self.config.calibration.auto_repin_on_reconnect
+            and head_pose is not None
+        ):
+            self._pin_and_calibrate(head_pose, data_store, self._home_ee_source)
+            self._prev_pin_pressed = pin_pressed_now
+            self._prev_start_pressed = start_pressed_now
+            self._last_active_s = now
+            print("[CALIBRATION] Auto-repinned after reconnect — press A to resume")
+            return NormalizedTarget(state=CalibrationState.READY,
+                                    left_trigger=left_trigger, right_trigger=right_trigger)
+
         pin_rising = pin_pressed_now and not self._prev_pin_pressed
         start_rising = start_pressed_now and not self._prev_start_pressed
         self._prev_pin_pressed = pin_pressed_now
@@ -173,16 +205,16 @@ class VRNormalizer:
         if pin_rising and head_pose is not None:
             self._pin_and_calibrate(head_pose, data_store, self._home_ee_source)
             self._needs_pin = False
+            self._was_calibrated = True
             self._last_active_s = now
             print("[CALIBRATION] Origin pinned — press A to start IK solving")
 
-        # A-button: start IK solving → ACTIVE (requires B first)
+        # A-button: start IK solving → ACTIVE (requires calibration first)
         if start_rising:
-            if self._needs_pin:
+            if not self._was_calibrated:
                 print("[CALIBRATION] WARNING: Press B first to pin origin and normalize position, then press A")
             elif self.state == CalibrationState.READY:
                 self.state = CalibrationState.ACTIVE
-                self._needs_pin = True  # require B again after next stop/restart
                 self._last_active_s = now
                 print("[CALIBRATION] IK solving ACTIVE — press B to re-pin at any time")
 
@@ -229,8 +261,9 @@ class VRNormalizer:
             rebased = self._rebase_pose(pose)
             self._calibration_anchor[side] = rebased
 
-        # Store FK home end-effector poses as the base for IK targets
-        self._home_ee = home_ee or {}
+        # Store FK home end-effector poses as the base for IK targets.
+        # Copy to avoid mutating the source dict (e.g. ik_service.home_fk) later.
+        self._home_ee = dict(home_ee) if home_ee else {}
 
         self.state = CalibrationState.READY
 
@@ -298,15 +331,24 @@ class VRNormalizer:
             state=self.state,
         )
 
-    def _reset(self) -> None:
-        """Reset to WAITING state."""
+    def _reset(self, hard: bool = False) -> None:
+        """Reset to WAITING state.
+
+        hard=True: full reset, forget calibration session state.
+        hard=False: soft reset for disconnect when auto-repin is enabled;
+                    preserves _was_calibrated so reconnect can auto-repin.
+        """
         self.state = CalibrationState.WAITING
-        self._needs_pin = True
         self._vr_origin = None
         self._calibration_anchor.clear()
-        self._home_ee.clear()
+        # Use a new dict so we don't mutate the shared source (ik_service.home_fk).
+        self._home_ee = {}
         self._prev_pin_pressed = False
         self._prev_start_pressed = False
+        if hard or not self.config.calibration.auto_repin_on_reconnect:
+            self._needs_pin = True
+            self._was_calibrated = False
+        # else: keep _needs_pin and _was_calibrated so auto-repin can fire
 
     def get_status(self) -> dict[str, Any]:
         """Return current calibration state for snapshot."""

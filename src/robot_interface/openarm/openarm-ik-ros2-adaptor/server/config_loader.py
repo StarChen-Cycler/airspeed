@@ -108,6 +108,7 @@ class CalibrationConfig:
     stale_timeout_s: float
     pin_button: str
     start_button: str
+    auto_repin_on_reconnect: bool = True
 
 
 @dataclass
@@ -208,6 +209,7 @@ def _parse_vr_config(data: dict[str, Any]) -> VRConfig:
             stale_timeout_s=_require(cal_data, "stale_timeout_s", "vr.yaml/calibration"),
             pin_button=_require(cal_data, "pin_button", "vr.yaml/calibration"),
             start_button=_require(cal_data, "start_button", "vr.yaml/calibration"),
+            auto_repin_on_reconnect=cal_data.get("auto_repin_on_reconnect", True),
         ),
         publisher=publisher,
     )

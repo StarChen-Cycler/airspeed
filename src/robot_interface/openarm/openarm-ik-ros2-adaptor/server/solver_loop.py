@@ -54,7 +54,7 @@ async def solver_loop(
                         head_pose, vr_subscriber.data_store, ik_service.home_fk
                     )
                 else:
-                    vr_normalizer._reset()
+                    vr_normalizer._reset(hard=True)
 
         control_source = "idle"
         target_L = None
