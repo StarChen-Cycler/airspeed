@@ -290,8 +290,8 @@ class CameraPublisherNode(Node):
                     "info_pub": info_pub,
                     "stype": stype,
                     "key": f"{topic}/{topic_suffix}".lstrip("/"),
-                    "encoding": "jpeg" if force_jpeg else scfg.get("encoding", "rgb8"),
-                    "jpeg_q": scfg.get("jpeg_quality", 70),
+                    "encoding": "jpeg" if force_jpeg else scfg.get("encoding", "jpeg"),
+                    "jpeg_q": scfg.get("jpeg_quality", 90),
                 })
                 self.get_logger().info(f"Camera: {topic}/{topic_suffix} ({stype})")
 
@@ -372,7 +372,12 @@ class CameraPublisherNode(Node):
                     stamp = self.get_clock().now().to_msg()
 
                     if s["encoding"] == "jpeg":
-                        # JPEG path: compress at source (small messages, stored as-is)
+                        # JPEG path: compress at source (small messages, stored as-is).
+                        # cv2.imencode links against libjpeg-turbo (OpenCV on this box
+                        # reports libjpeg-turbo 3.0.3) and was the fastest installed
+                        # encoder in a 2026-07-23 benchmark: ~0.7 ms/frame p50, p99
+                        # < 1 ms for 640x480 RGB at q90. PIL.save was ~7 ms, and
+                        # torchvision.io.encode_jpeg was >30 ms.
                         if len(frame.shape) == 3 and frame.shape[2] == 3:
                             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                         else:
