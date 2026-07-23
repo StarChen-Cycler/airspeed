@@ -73,13 +73,13 @@ _CAMERA_INFO_QOS = QoSProfile(
 _DIRECT_API_STREAMS = {"depth", "infra_left", "infra_right"}
 
 # ---------------------------------------------------------------------------
-# Raw-image zenoh side channel
+# Image zenoh side channel
 #
 # rclpy costs ~130 ms per 1 MB frame (per-field payload conversion); zenoh
 # passes raw bytes at ~0.9 ms (validated 2026-07-17, see analysis memo).
-# Raw frames therefore travel over zenoh; only JPEG frames and CameraInfo use
-# ROS2 topics. ENVELOPE CONTRACT — keep in sync with the collector's
-# core/runtime/zenoh_image_channel.py:
+# All image frames (rgb8 raw or JPEG) therefore travel over zenoh; only
+# CameraInfo uses ROS2 topics. ENVELOPE CONTRACT — keep in sync with the
+# collector's core/runtime/zenoh_image_channel.py:
 #   key:     ROS topic path without the leading slash (e.g. camera/head/image_raw)
 #   payload: <QQHHB (ts_ns, seq, width, height, enc_len) + encoding + frame
 # ---------------------------------------------------------------------------
@@ -309,15 +309,15 @@ class CameraPublisherNode(Node):
         self._last_print = time.monotonic()
         self._log_lock = threading.Lock()
 
-        # Raw frames travel over the zenoh side channel (rclpy is too slow for
-        # ~1 MB messages); JPEG frames and CameraInfo stay on ROS2 topics.
+        # Image frames travel over the zenoh side channel (rclpy is too slow for
+        # ~1 MB raw messages); JPEG frames are small but still use zenoh to match
+        # the session config transport. CameraInfo stays on ROS2 topics.
         self._channel: Optional[_ZenohImageChannel] = None
-        raw_streams = [s for s in self._streams if s["encoding"] != "jpeg"]
-        if side_channel and raw_streams:
+        if side_channel and self._streams:
             self._channel = _ZenohImageChannel()
             self.get_logger().info(
                 f"Zenoh side channel on {ZENOH_LISTEN_ENDPOINT} "
-                f"for {len(raw_streams)} raw stream(s)"
+                f"for {len(self._streams)} stream(s)"
             )
         self.get_logger().info(f"Camera Publisher: native rate, {len(self._streams)} stream(s)")
 
@@ -396,9 +396,9 @@ class CameraPublisherNode(Node):
                         payload = frame.tobytes()
                         step = frame.shape[1] * (frame.shape[2] if frame.ndim == 3 else 1)
 
-                    if s["encoding"] != "jpeg" and self._channel is not None:
-                        # Zenoh side channel for raw frames — rclpy cannot
-                        # sustain ~1 MB messages; see _ZenohImageChannel docs.
+                    if self._channel is not None:
+                        # Zenoh side channel for image frames — rclpy cannot
+                        # sustain ~1 MB raw messages; see _ZenohImageChannel docs.
                         self._channel.send(
                             s["key"],
                             ts_ns=stamp.sec * 10**9 + stamp.nanosec,
