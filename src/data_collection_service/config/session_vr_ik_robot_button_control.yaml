@@ -353,8 +353,9 @@ streams:
       depth: 5
     time_domain: ros_header
     frame_id: camera_left_wrist_optical_frame
-    image_encoding: raw
-    transport: zenoh
+    image_encoding: jpeg
+    transport: ros2
+    expected_rate_hz: 30
     fields:
       - path: data
         type: bytes
@@ -371,8 +372,9 @@ streams:
       depth: 5
     time_domain: ros_header
     frame_id: camera_right_wrist_optical_frame
-    image_encoding: raw
-    transport: zenoh
+    image_encoding: jpeg
+    transport: ros2
+    expected_rate_hz: 30
     fields:
       - path: data
         type: bytes
@@ -389,8 +391,9 @@ streams:
       depth: 5
     time_domain: ros_header
     frame_id: camera_head_optical_frame
-    image_encoding: raw
-    transport: zenoh
+    image_encoding: jpeg
+    transport: ros2
+    expected_rate_hz: 30
     fields:
       - path: data
         type: bytes
