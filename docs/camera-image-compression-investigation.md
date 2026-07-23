@@ -64,16 +64,20 @@ budget — negligible. OpenCV was therefore chosen as the implementation.
 ## 5. Implementation status
 
 - `src/sensor_interface/camera-stream-adaptor/config/camera.yaml`: color streams
-  switched to `encoding: jpeg`, `jpeg_quality: 90`.
+  switched to `encoding: jpeg`, `jpeg_quality: 90`, `848x480 @ 30 fps`.
 - `src/sensor_interface/camera-stream-adaptor/camera_publisher.py`: default
-  fallback quality raised to 90, with a comment documenting why cv2.imencode
-  (libjpeg-turbo) is the fastest installed encoder.
+  fallback quality raised to 90; JPEG frames are sent over the **zenoh side
+  channel** (raw frames used zenoh before for the same latency reason).
+- `src/data_collection_service/config/session_vr_ik_robot_button_control.yaml`:
+  camera streams declare `transport: zenoh`, `image_encoding: jpeg`,
+  `expected_rate_hz: 30`. CameraInfo remains on ROS2.
 
 ## 6. Recommendations
 
-1. **Store JPEG q90 in the HDF5.** ~22× smaller, ~14 GB/h, encode cost ~0.65 ms.
-   At 640×480 the policy input (224×224) is already ~3× oversampled, so q90
-   artifacts are invisible after downsampling — the core argument of
+1. **Store JPEG q90 in the HDF5 via zenoh.** ~22× smaller, ~14 GB/h at 640×480
+   (tested at 848×480: ~46–65 KB/frame), encode cost ~0.65 ms. At 640×480 the
+   policy input (224×224) is already ~3× oversampled, so q90 artifacts are
+   invisible after downsampling — the core argument of
    `advice-for-imagedata.md` applies directly. Avoid q70 (previous config
    default): too aggressive for wrist cameras tracking small grasp targets.
    PNG for RGB is not worth it (2.7× ratio at 5× the encode cost).
