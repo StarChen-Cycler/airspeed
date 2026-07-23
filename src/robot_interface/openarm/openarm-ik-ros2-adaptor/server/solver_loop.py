@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 from typing import Any
 
@@ -77,8 +78,9 @@ async def solver_loop(
                 control_source = "vr"
 
         # Gripper command in degrees: trigger=0 → open (-65°), trigger=1 → closed (0°).
-        # Computed once and reused for both ROS2 and WebSocket control paths so the
-        # recorded command matches the motor state units.
+        # Degrees are the motor-control unit (WebSocket → arm_controller → damiao).
+        # The ROS2 command topic gets radians instead (math.radians at publish time)
+        # so the recorded command matches the recorded joint_state units.
         left_gripper_deg = -65.0 * (1.0 - left_trigger)
         right_gripper_deg = -65.0 * (1.0 - right_trigger)
 
@@ -158,12 +160,12 @@ async def solver_loop(
             and len(result.joint_radians_left) == 9
             and len(result.joint_radians_right) == 9
         ):
-            # ROS2 path: 7 arm joints (radians) + 1 gripper (degrees) so the
-            # recorded ik_*_joint_commands use the same units as arm_*_joint_state.
+            # ROS2 path: all 8 values in radians (7 arm joints + gripper) so the
+            # recorded ik_*_joint_commands match the arm_*_joint_state units.
             if ros2_publisher is not None:
                 ros2_publisher.publish(
-                    left_joints=result.joint_radians_left[:7] + [left_gripper_deg],
-                    right_joints=result.joint_radians_right[:7] + [right_gripper_deg],
+                    left_joints=result.joint_radians_left[:7] + [math.radians(left_gripper_deg)],
+                    right_joints=result.joint_radians_right[:7] + [math.radians(right_gripper_deg)],
                     left_target_xyz=result.target_left_position if result.target_left_active else None,
                     left_target_quat_xyzw=_wxyz_to_xyzw(result.target_left_quaternion_wxyz) if result.target_left_active else None,
                     right_target_xyz=result.target_right_position if result.target_right_active else None,

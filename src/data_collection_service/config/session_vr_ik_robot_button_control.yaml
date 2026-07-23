@@ -209,8 +209,8 @@ streams:
     source: robot
     topic: /arm/left/joint_commands
     message_type: sensor_msgs/JointState
-    # Units: L_joint_cmd_1..7 are radians (Damiao arm joints); L_gripper_cmd
-    # is degrees, matching the arm_state_publisher gripper motor state.
+    # Units: all 8 columns in radians (ROS JointState convention), matching
+    # arm_left_joint_state. Gripper: 0 = closed, -1.134 rad (-65 deg) = open.
     columns: [L_joint_cmd_1, L_joint_cmd_2, L_joint_cmd_3, L_joint_cmd_4, L_joint_cmd_5, L_joint_cmd_6, L_joint_cmd_7, L_gripper_cmd]
     qos:
       reliability: best_effort
@@ -227,8 +227,8 @@ streams:
     source: robot
     topic: /arm/right/joint_commands
     message_type: sensor_msgs/JointState
-    # Units: R_joint_cmd_1..7 are radians (Damiao arm joints); R_gripper_cmd
-    # is degrees, matching the arm_state_publisher gripper motor state.
+    # Units: all 8 columns in radians (ROS JointState convention), matching
+    # arm_right_joint_state. Gripper: 0 = closed, -1.134 rad (-65 deg) = open.
     columns: [R_joint_cmd_1, R_joint_cmd_2, R_joint_cmd_3, R_joint_cmd_4, R_joint_cmd_5, R_joint_cmd_6, R_joint_cmd_7, R_gripper_cmd]
     qos:
       reliability: best_effort
@@ -317,6 +317,8 @@ streams:
     source: robot
     topic: /arm/left/joint_state
     message_type: sensor_msgs/JointState
+    # Units: all 8 columns in radians (motor feedback deg2rad'd upstream).
+    # Gripper: 0 = closed, -1.134 rad (-65 deg) = open.
     columns: [L_joint_state_1, L_joint_state_2, L_joint_state_3, L_joint_state_4, L_joint_state_5, L_joint_state_6, L_joint_state_7, L_gripper_state]
     qos:
       reliability: best_effort
@@ -333,6 +335,8 @@ streams:
     source: robot
     topic: /arm/right/joint_state
     message_type: sensor_msgs/JointState
+    # Units: all 8 columns in radians (motor feedback deg2rad'd upstream).
+    # Gripper: 0 = closed, -1.134 rad (-65 deg) = open.
     columns: [R_joint_state_1, R_joint_state_2, R_joint_state_3, R_joint_state_4, R_joint_state_5, R_joint_state_6, R_joint_state_7, R_gripper_state]
     qos:
       reliability: best_effort
