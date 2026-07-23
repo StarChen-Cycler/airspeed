@@ -10,7 +10,7 @@ cameras:
     streams:
       color:
         enabled: true
-        width: 640
+        width: 848
         height: 480
         fps: 30
         encoding: "jpeg"    # rgb8 (raw pixels, stored as-is) or jpeg (compressed at source)
@@ -30,7 +30,7 @@ cameras:
     streams:
       color:
         enabled: true
-        width: 640
+        width: 848
         height: 480
         fps: 30
         encoding: "jpeg"
@@ -43,7 +43,7 @@ cameras:
     streams:
       color:
         enabled: true
-        width: 640
+        width: 848
         height: 480
         fps: 30
         encoding: "jpeg"
@@ -56,29 +56,29 @@ max_cameras: 3
 # Omit or set to empty dict to skip CameraInfo publishing for that camera.
 intrinsics:
   right_wrist:
-    width: 640
+    width: 848
     height: 480
-    fx: 615.0
+    fx: 815.25
     fy: 615.0
-    cx: 320.0
+    cx: 424.0
     cy: 240.0
     distortion_model: "plumb_bob"
     distortion_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
   head:
-    width: 640
+    width: 848
     height: 480
-    fx: 615.0
+    fx: 815.25
     fy: 615.0
-    cx: 320.0
+    cx: 424.0
     cy: 240.0
     distortion_model: "plumb_bob"
     distortion_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
   left_wrist:
-    width: 640
+    width: 848
     height: 480
-    fx: 615.0
+    fx: 815.25
     fy: 615.0
-    cx: 320.0
+    cx: 424.0
     cy: 240.0
     distortion_model: "plumb_bob"
     distortion_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
