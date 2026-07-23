@@ -22,6 +22,7 @@ Dependencies: Python 3.10+, aiohttp, rclpy, std_msgs, geometry_msgs
 
 import json
 import os
+import shutil
 import ssl
 import sys
 import subprocess
@@ -159,17 +160,45 @@ def create_ssl_context() -> ssl.SSLContext:
 # ---------------------------------------------------------------------------
 # ADB port forwarding
 # ---------------------------------------------------------------------------
+def _adb_env_with_null_log() -> tuple[dict[str, str], str]:
+    """Return an env dict and a temp dir that redirects adb daemon logs to /dev/null.
+
+    The ADB daemon writes all stdout/stderr to $TMPDIR/adb.<UID>.log, which can
+    grow without bound. By symlinking that file to /dev/null inside a private
+    TMPDIR we keep adb fully functional while discarding the daemon log.
+    """
+    import tempfile
+
+    uid = os.getuid()
+    tmpdir = tempfile.mkdtemp(prefix="vr_bridge_adb_")
+    log_link = os.path.join(tmpdir, f"adb.{uid}.log")
+    try:
+        os.symlink(os.devnull, log_link)
+    except FileExistsError:
+        pass
+    env = os.environ.copy()
+    env["TMPDIR"] = tmpdir
+    return env, tmpdir
+
+
 def setup_adb_reverse(port: int) -> bool:
     """Refresh ADB server, then set up tcp:{port} reverse tunnel on all devices."""
+    env, adb_tmpdir = _adb_env_with_null_log()
     try:
-        subprocess.run(["adb", "kill-server"], capture_output=True, timeout=5)
-        subprocess.run(["adb", "start-server"], capture_output=True, timeout=5)
+        subprocess.run(["adb", "kill-server"], capture_output=True, timeout=5, env=env)
+        subprocess.run(["adb", "start-server"], capture_output=True, timeout=5, env=env)
     except Exception as e:
         logger.warning("ADB: could not refresh server: %s", e)
         return False
+    finally:
+        # Daemon has opened /dev/null via the symlink; the temp dir is no longer needed.
+        try:
+            shutil.rmtree(adb_tmpdir)
+        except Exception:
+            pass
 
     try:
-        r = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=5, env=env)
         devices = [l.split('\t')[0] for l in r.stdout.strip().split('\n')[1:]
                    if '\t' in l and l.split('\t')[1] == 'device']
         if not devices:
@@ -179,7 +208,7 @@ def setup_adb_reverse(port: int) -> bool:
         for dev in devices:
             rr = subprocess.run(
                 ["adb", "-s", dev, "reverse", f"tcp:{port}", f"tcp:{port}"],
-                capture_output=True, text=True, timeout=10)
+                capture_output=True, text=True, timeout=10, env=env)
             if rr.returncode == 0:
                 logger.info("ADB reverse tcp:%s → %s", port, dev)
             else:
