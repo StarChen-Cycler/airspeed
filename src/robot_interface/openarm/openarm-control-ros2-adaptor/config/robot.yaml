@@ -21,30 +21,19 @@ right_joints:
 - openarm_right_gripper
 gripper_open_deg: -65.0
 kp:
-  # Validated safe operating point (step 1, 2026-07-22).
-  #
-  # *** INCIDENT + REVERT (2026-07-22) ***
-  # Step 2 (J1-J4 kp 120) caused a right-arm-wide oscillation that built up
-  # under load after ~12 s of teleop (episode T1-20260722T111654047279Z) —
-  # kp rose 50% while kd is hard-capped at 5.0 on the wire, leaving the loop
-  # under-damped; the loaded right arm tipped into shaking and the run was
-  # stopped. REVERTED to step 1. kp 90 IS THE ESTABLISHED MAXIMUM for J1-J4
-  # on this mount — do not raise them.
-  #
-  # J6 is intentionally pushed above the step-1 wrist value because loaded
-  # wrist-pitch tracking (especially left-J6) still under-reaches. kp 45
-  # keeps kd under the 5.0 wire cap with damping ratio preserved. Monitor
-  # for wrist oscillation on the first loaded runs.
-  joint_1: 90.0
-  joint_2: 90.0
-  joint_3: 90.0
-  joint_4: 90.0
-  joint_5: 18.0
-  joint_6: 45.0  # re-applied 2026-07-23: step-3 value (36->45) for loaded-wrist
-                 # tracking; kd sqrt-scaled to hold damping ratio. Watch for
-                 # oscillation under load on the unstable table.
-  joint_7: 18.0
-  gripper: 15.0
+  # Softer baseline (2026-07-23): fast teleop moves on the unstable table
+  # caused shaking at kp 90/45. Reverted toward the original kp-60 baseline
+  # for J1-J4 and the kp-6 wrist baseline, while keeping J6 at the validated
+  # step-1 value (36) because loaded wrist-pitch still under-reaches with
+  # lower gains. This trades tracking stiffness for stability.
+  joint_1: 60.0
+  joint_2: 60.0
+  joint_3: 60.0
+  joint_4: 60.0
+  joint_5: 6.0
+  joint_6: 36.0  # higher than the baseline 8 for loaded-wrist tracking
+  joint_7: 6.0
+  gripper: 10.0
 kd:
   # Damiao MIT protocol caps kd at 5.0 (12-bit wire range). Values here go
   # on the wire verbatim; startup validation rejects anything out of range.
@@ -52,11 +41,10 @@ kd:
   joint_2: 5.0
   joint_3: 5.0
   joint_4: 5.0
-  joint_5: 1.6
-  joint_6: 2.9  # sqrt-scaled with kp 36->45 (x1.118) to hold damping ratio;
-                # under the 5.0 MIT wire cap; monitor for oscillation.
-  joint_7: 1.6
-  gripper: 1.2
+  joint_5: 0.9
+  joint_6: 2.5  # sqrt-scaled from baseline (kp 8->36) to preserve damping ratio
+  joint_7: 0.9
+  gripper: 0.9
 arm_state_hz: 50
 # Per-cycle slew clamp. At 50 Hz, 1.8 deg/cycle keeps the effective speed
 # limit at 90 deg/s (same envelope as 3.0 deg/cycle at 30 Hz).
