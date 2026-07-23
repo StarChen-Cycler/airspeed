@@ -90,8 +90,8 @@ class ArmCommandPublisher:
         """Publish joint commands and target poses for both arms.
 
         Args:
-            left_joints:  [j1..j7, gripper] in radians.
-            right_joints: [j1..j7, gripper] in radians.
+            left_joints:  [j1..j7 in radians, gripper in degrees].
+            right_joints: [j1..j7 in radians, gripper in degrees].
             left_target_xyz: Optional VR target position [x, y, z] in meters.
             left_target_quat_xyzw: Optional VR target orientation quaternion.
             right_target_xyz, right_target_quat_xyzw: Same for right arm.

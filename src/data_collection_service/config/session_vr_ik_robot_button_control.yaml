@@ -209,6 +209,8 @@ streams:
     source: robot
     topic: /arm/left/joint_commands
     message_type: sensor_msgs/JointState
+    # Units: L_joint_cmd_1..7 are radians (Damiao arm joints); L_gripper_cmd
+    # is degrees, matching the arm_state_publisher gripper motor state.
     columns: [L_joint_cmd_1, L_joint_cmd_2, L_joint_cmd_3, L_joint_cmd_4, L_joint_cmd_5, L_joint_cmd_6, L_joint_cmd_7, L_gripper_cmd]
     qos:
       reliability: best_effort
@@ -225,6 +227,8 @@ streams:
     source: robot
     topic: /arm/right/joint_commands
     message_type: sensor_msgs/JointState
+    # Units: R_joint_cmd_1..7 are radians (Damiao arm joints); R_gripper_cmd
+    # is degrees, matching the arm_state_publisher gripper motor state.
     columns: [R_joint_cmd_1, R_joint_cmd_2, R_joint_cmd_3, R_joint_cmd_4, R_joint_cmd_5, R_joint_cmd_6, R_joint_cmd_7, R_gripper_cmd]
     qos:
       reliability: best_effort

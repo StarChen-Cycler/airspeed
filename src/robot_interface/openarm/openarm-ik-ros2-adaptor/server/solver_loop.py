@@ -76,6 +76,12 @@ async def solver_loop(
                 right_trigger = vr_result.right_trigger
                 control_source = "vr"
 
+        # Gripper command in degrees: trigger=0 → open (-65°), trigger=1 → closed (0°).
+        # Computed once and reused for both ROS2 and WebSocket control paths so the
+        # recorded command matches the motor state units.
+        left_gripper_deg = -65.0 * (1.0 - left_trigger)
+        right_gripper_deg = -65.0 * (1.0 - right_trigger)
+
         # Priority 2: Legacy target buffer
         if control_source == "idle":
             target_data = buffer.read()
@@ -114,7 +120,9 @@ async def solver_loop(
                 ),
             }
 
-        # Override finger joints with trigger-based gripper BEFORE snapshot
+        # Override finger joints for visualization/snapshot only.
+        # The real control path uses 7 arm joints (radians) plus the separate
+        # gripper degree fields computed above.
         # trigger=0 → gripper open → URDF 0.044m, trigger=1 → closed → URDF 0.0m
         if (
             result is not None
@@ -150,17 +158,27 @@ async def solver_loop(
             and len(result.joint_radians_left) == 9
             and len(result.joint_radians_right) == 9
         ):
-            joint_commands = result.joint_radians_left + result.joint_radians_right
+            # ROS2 path: 7 arm joints (radians) + 1 gripper (degrees) so the
+            # recorded ik_*_joint_commands use the same units as arm_*_joint_state.
             if ros2_publisher is not None:
                 ros2_publisher.publish(
-                    left_joints=result.joint_radians_left[:8],
-                    right_joints=result.joint_radians_right[:8],
+                    left_joints=result.joint_radians_left[:7] + [left_gripper_deg],
+                    right_joints=result.joint_radians_right[:7] + [right_gripper_deg],
                     left_target_xyz=result.target_left_position if result.target_left_active else None,
                     left_target_quat_xyzw=_wxyz_to_xyzw(result.target_left_quaternion_wxyz) if result.target_left_active else None,
                     right_target_xyz=result.target_right_position if result.target_right_active else None,
                     right_target_quat_xyzw=_wxyz_to_xyzw(result.target_right_quaternion_wxyz) if result.target_right_active else None,
                 )
-            await _broadcast_arm(app, joint_commands, left_trigger, right_trigger)
+            # WS control path: 7 arm joints + separate gripper degree fields.
+            # The full 18-DOF joint_commands array is kept only for snapshot/visualization.
+            joint_commands = result.joint_radians_left + result.joint_radians_right
+            await _broadcast_arm(
+                app,
+                result.joint_radians_left[:7],
+                result.joint_radians_right[:7],
+                left_gripper_deg,
+                right_gripper_deg,
+            )
 
         # Maintain 50 Hz cadence
         elapsed = time.monotonic() - t_start
@@ -183,22 +201,27 @@ async def _broadcast(app: web.Application, snapshot: dict[str, Any]) -> None:
 
 async def _broadcast_arm(
     app: web.Application,
-    joint_commands: list[float],
-    left_trigger: float = 0.0,
-    right_trigger: float = 0.0,
+    left_joints: list[float],
+    right_joints: list[float],
+    left_gripper_deg: float = 0.0,
+    right_gripper_deg: float = 0.0,
 ) -> None:
-    """Send joint commands + gripper state to all arm WebSocket clients."""
+    """Send joint commands + gripper state to all arm WebSocket clients.
+
+    Args:
+        left_joints: 7 arm joint positions in radians.
+        right_joints: 7 arm joint positions in radians.
+        left_gripper_deg: Left gripper target in degrees (0 = closed, -65 = open).
+        right_gripper_deg: Right gripper target in degrees.
+    """
     arm_websockets: set[web.WebSocketResponse] = app.get("arm_websockets", set())
     if not arm_websockets:
         return
-    # Gripper: trigger pressed → close (0°), released → open (-65°)
-    left_gripper_deg = -65.0 * (1.0 - left_trigger)
-    right_gripper_deg = -65.0 * (1.0 - right_trigger)
     data = json.dumps({
         "type": "arm_commands",
-        "joints": joint_commands,
-        "left": joint_commands[:9],
-        "right": joint_commands[9:],
+        "joints": left_joints + right_joints,
+        "left": left_joints,
+        "right": right_joints,
         "left_gripper_deg": left_gripper_deg,
         "right_gripper_deg": right_gripper_deg,
     })
